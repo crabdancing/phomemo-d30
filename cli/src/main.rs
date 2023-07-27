@@ -1,8 +1,8 @@
-// TODO: Allow changing bluetooth address from CLI
+// TODO: load from config file -- store default font size & machine name -> mac addr mappings
 // TODO: Encapsulate basic mechanisms for initializing connection and sending images
 // TODO: Figure out what's required for batch printing (e.g.,
 // can I just send the precursor bytes once, and then send multiple packed images?
-use std::{io::Write, sync::Arc};
+use std::{ffi::OsString, io::Write, os::unix::prelude::OsStrExt, str::FromStr, sync::Arc};
 
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
@@ -28,11 +28,58 @@ enum Commands {
 
 #[derive(clap::Args, Debug)]
 struct ArgsPrintText {
+    addr: MacAddr,
     text: String,
     #[arg(short, long)]
     #[arg(default_value = "40")]
     scale: f32,
 }
+
+#[derive(Clone, Debug)]
+struct MacAddr([u8; 6]);
+
+impl Into<String> for MacAddr {
+    fn into(self) -> String {
+        format!(
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
+        )
+    }
+}
+
+impl FromStr for MacAddr {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        let mut bytes = [0u8; 6];
+        for (i, part) in parts.iter().enumerate() {
+            bytes[i] = u8::from_str_radix(part, 16)?;
+        }
+        Ok(MacAddr(bytes))
+    }
+}
+
+impl Into<BtAddr> for MacAddr {
+    fn into(self) -> BtAddr {
+        BtAddr(self.0)
+    }
+}
+
+// trait FromStringlike {
+//     fn from_stringlike(stringlike: impl Into<String>) -> Self;
+// }
+
+// impl FromStringlike for BtAddr {
+//     fn from_stringlike(stringlike: impl Into<String>) -> Self {
+//         let mac_string = stringlike.into();
+//         let mut output = [0u8; 6];
+//         for (i, value) in mac_string.split(':').enumerate() {
+//             output[i] = u8::from_str_radix(value, 16).unwrap();
+//         }
+//         BtAddr(output)
+//     }
+// }
 
 struct App {
     dry_run: bool,
@@ -49,15 +96,15 @@ impl App {
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image(&args.text, args.scale)
             .with_whatever_context(|_| "Failed to generate image")?;
-        let addr = BtAddr([164, 7, 51, 76, 23, 54]);
+        // let addr = BtAddr([164, 7, 51, 76, 23, 54]);
         let mut socket = bluetooth_serial_port_async::BtSocket::new(
             bluetooth_serial_port_async::BtProtocol::RFCOMM,
         )
-        .unwrap();
+        .with_whatever_context(|_| "Failed to open socket")?;
 
         if !self.dry_run {
             socket
-                .connect(addr)
+                .connect(args.addr.clone().into())
                 .with_whatever_context(|_| "Failed to connect")?;
         }
         debug!("Init connection");
