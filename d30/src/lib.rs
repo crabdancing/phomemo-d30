@@ -6,6 +6,9 @@ use rusttype::{Font, Scale};
 use dimensions::*;
 use snafu::{OptionExt, ResultExt, Whatever};
 
+// These values are based on those used in polskafan's phomemo_d30 code, available here:
+// https://github.com/polskafan/phomemo_d30
+
 pub const INIT_BASE: &[&[u8]] = &[
     &[31, 17, 56],               // 1f1138
     &[31, 17, 18, 31, 17, 19],   // 1f11121f1113
@@ -17,14 +20,16 @@ pub const INIT_BASE: &[&[u8]] = &[
 ];
 
 pub const IMG_PRECURSOR: &[u8] = &[31, 17, 36, 0, 27, 64, 29, 118, 48, 0, 12, 0, 64, 1]; // 1f1124001b401d7630000c004001
+
 const COLOR_BLACK: image::Rgba<u8> = image::Rgba([255u8, 255u8, 255u8, 255u8]);
 
 pub fn init_conn(port: &mut impl Write) -> Result<(), Whatever> {
+    // TODO: figure out for sure if there is a benefit to flushing after each one
     for v in INIT_BASE.iter() {
         port.write(v)
             .with_whatever_context(|_| "Failed to write to target")?;
-        port.flush()
-            .with_whatever_context(|_| "Failed to flush to target")?;
+        // port.flush()
+        //     .with_whatever_context(|_| "Failed to flush to target")?;
     }
     Ok(())
 }
@@ -59,6 +64,8 @@ pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whate
 }
 
 pub fn pack_image(image: &DynamicImage) -> Vec<u8> {
+    // This section of code is heavily based on logic from polskafan's phomemo_d30 code on Github
+    // See here: https://github.com/polskafan/phomemo_d30
     let threshold: u8 = 127;
     let width = image.width() as usize;
     let height = image.height() as usize;
