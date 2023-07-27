@@ -4,7 +4,7 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use rusttype::{Font, Scale};
 
 use dimensions::*;
-use snafu::{ResultExt, Whatever};
+use snafu::{OptionExt, ResultExt, Whatever};
 
 pub const INIT_BASE: &[&[u8]] = &[
     &[31, 17, 56],               // 1f1138
@@ -29,12 +29,11 @@ pub fn init_conn(port: &mut impl Write) -> Result<(), Whatever> {
     Ok(())
 }
 
-pub fn generate_image(text: &str, font_scale: f32) -> DynamicImage {
+pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whatever> {
     let dim = Dimensions::new(320, 96);
     dbg!(&dim);
     let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
-    let font = Font::try_from_vec(font).unwrap();
-
+    let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
     let scale = Scale::uniform(font_scale);
 
     let actual_size: Dimensions = imageproc::drawing::text_size(scale, &font, &text).into();
@@ -56,7 +55,7 @@ pub fn generate_image(text: &str, font_scale: f32) -> DynamicImage {
 
     let canvas = DynamicImage::from(canvas).rotate270();
 
-    canvas
+    Ok(canvas)
 }
 
 pub fn pack_image(image: &DynamicImage) -> Vec<u8> {
@@ -97,18 +96,3 @@ pub fn pack_image(image: &DynamicImage) -> Vec<u8> {
     }
     output
 }
-
-// pub fn add(left: usize, right: usize) -> usize {
-//     left + right
-// }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[test]
-//     fn it_works() {
-//         let result = add(2, 2);
-//         assert_eq!(result, 4);
-//     }
-// }

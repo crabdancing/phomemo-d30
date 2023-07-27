@@ -1,9 +1,4 @@
-use std::{io::Write, sync::Arc, time::Duration};
-
-// use bluer::{
-//     rfcomm::{self, Socket, SocketAddr},
-//     Address,
-// };
+use std::{io::Write, sync::Arc};
 
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
@@ -82,13 +77,6 @@ impl App {
                 .with_whatever_context(|_| "Failed to flush socket")?;
         }
         Ok(())
-    }
-
-    fn run<T>(&self, scale: impl Fn() -> T) -> Option<T> {
-        match self.dry_run {
-            true => Some(scale()),
-            false => None,
-        }
     }
 }
 
