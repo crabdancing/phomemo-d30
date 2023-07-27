@@ -58,7 +58,9 @@ impl App {
         }
         debug!("Init connection");
         if !self.dry_run {
-            d30::init_conn(&mut socket).with_whatever_context(|_| "Failed to init connection")?;
+            socket
+                .write(d30::INIT_BASE_FLAT)
+                .with_whatever_context(|_| "Failed to send magic init bytes")?;
         }
         let mut output = d30::IMG_PRECURSOR.to_vec();
         debug!("Extend output");
