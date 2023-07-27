@@ -6,7 +6,8 @@ This library contains components heavily based on code available in the [polskaf
 but takes no code directly from said library. That library in turn is based heavily on the work of others,
 including [viver](https://github.com/vivier/phomemo-tools) and [theacodes](https://github.com/theacodes/phomemo_m02s).
 
-The gist of it is that there are several magic sequences sent to the appliance by their 'Print Master' Android app. These were sniffed
+The gist of it is that there are several magic sequences sent to the appliance by their 'Print Master' Android app. These were sniffed,
+and now can be blindly transmitted by a number of scripts and utilities available on Github. This is one such utility.
 
 Sponsored by Exobody
 
