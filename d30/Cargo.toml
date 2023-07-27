@@ -2,6 +2,10 @@
 name = "d30"
 version = "0.1.0"
 edition = "2021"
+description = "Provisional userspace driver/app for the Phomemo D30 printer"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/alxpettit/dimensions"
+keywords = ["calculator"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
