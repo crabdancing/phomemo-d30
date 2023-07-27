@@ -1,0 +1,19 @@
+[package]
+name = "d30"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# bluer = { version = "0.15.7", features = ["full"] }
+dimensions = "0.1.0"
+bluetooth-serial-port-async = "0.6.3"
+derive_more = "0.99.17"
+# hex = "0.4.3"
+image = "0.24.6"
+imageproc = "0.23.0"
+rusttype = { version = "0.9.3", features = ["gpu_cache"] }
+serialport = "4.2.1"
+snafu = "0.7.5"
+tokio = { version = "1.29.1", features = ["full"] }
