@@ -4,6 +4,7 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use rusttype::{Font, Scale};
 
 use dimensions::*;
+use snafu::{ResultExt, Whatever};
 
 pub const INIT_BASE: &[&[u8]] = &[
     &[31, 17, 56],               // 1f1138
@@ -18,11 +19,14 @@ pub const INIT_BASE: &[&[u8]] = &[
 pub const IMG_PRECURSOR: &[u8] = &[31, 17, 36, 0, 27, 64, 29, 118, 48, 0, 12, 0, 64, 1]; // 1f1124001b401d7630000c004001
 const COLOR_BLACK: image::Rgba<u8> = image::Rgba([255u8, 255u8, 255u8, 255u8]);
 
-pub fn init_conn(port: &mut impl Write) {
+pub fn init_conn(port: &mut impl Write) -> Result<(), Whatever> {
     for v in INIT_BASE.iter() {
-        port.write(v).expect("Write failed!");
-        port.flush().unwrap();
+        port.write(v)
+            .with_whatever_context(|_| "Failed to write to target")?;
+        port.flush()
+            .with_whatever_context(|_| "Failed to flush to target")?;
     }
+    Ok(())
 }
 
 pub fn generate_image(text: &str, font_scale: f32) -> DynamicImage {
@@ -91,7 +95,7 @@ pub fn pack_image(image: &DynamicImage) -> Vec<u8> {
             output.push(byte);
         }
     }
-    return output;
+    output
 }
 
 // pub fn add(left: usize, right: usize) -> usize {
