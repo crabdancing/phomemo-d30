@@ -28,6 +28,7 @@ enum Commands {
 
 #[derive(clap::Args, Debug)]
 struct ArgsPrintText {
+    #[arg(short, long)]
     addr: MacAddr,
     text: String,
     #[arg(short, long)]
@@ -81,6 +82,7 @@ impl App {
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image(&args.text, args.scale)
             .with_whatever_context(|_| "Failed to generate image")?;
+        // let addr = BtAddr([164, 7, 51, 76, 23, 54]);
         let mut socket = bluetooth_serial_port_async::BtSocket::new(
             bluetooth_serial_port_async::BtProtocol::RFCOMM,
         )
