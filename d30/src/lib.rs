@@ -1,10 +1,8 @@
-use std::io::Write;
-
 use image::{DynamicImage, ImageBuffer, Rgba};
 use rusttype::{Font, Scale};
 
 use dimensions::*;
-use snafu::{OptionExt, ResultExt, Whatever};
+use snafu::{OptionExt, Whatever};
 
 // These values are based on those used in polskafan's phomemo_d30 code, available here:
 // https://github.com/polskafan/phomemo_d30

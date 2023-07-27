@@ -2,7 +2,7 @@
 // TODO: Encapsulate basic mechanisms for initializing connection and sending images
 // TODO: Figure out what's required for batch printing (e.g.,
 // can I just send the precursor bytes once, and then send multiple packed images?
-use std::{ffi::OsString, io::Write, os::unix::prelude::OsStrExt, str::FromStr, sync::Arc};
+use std::{io::Write, str::FromStr, sync::Arc};
 
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
