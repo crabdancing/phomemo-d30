@@ -66,21 +66,6 @@ impl Into<BtAddr> for MacAddr {
     }
 }
 
-// trait FromStringlike {
-//     fn from_stringlike(stringlike: impl Into<String>) -> Self;
-// }
-
-// impl FromStringlike for BtAddr {
-//     fn from_stringlike(stringlike: impl Into<String>) -> Self {
-//         let mac_string = stringlike.into();
-//         let mut output = [0u8; 6];
-//         for (i, value) in mac_string.split(':').enumerate() {
-//             output[i] = u8::from_str_radix(value, 16).unwrap();
-//         }
-//         BtAddr(output)
-//     }
-// }
-
 struct App {
     dry_run: bool,
 }
@@ -96,7 +81,6 @@ impl App {
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image(&args.text, args.scale)
             .with_whatever_context(|_| "Failed to generate image")?;
-        // let addr = BtAddr([164, 7, 51, 76, 23, 54]);
         let mut socket = bluetooth_serial_port_async::BtSocket::new(
             bluetooth_serial_port_async::BtProtocol::RFCOMM,
         )
