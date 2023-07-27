@@ -4,4 +4,4 @@ Library & utilities for controlling the Phomemo D30 using a reverse engineered p
 
 Sponsored by Exobody
 
-![Exobody Logo](assets/exobody.svg)
+![Exobody Logo](assets/exobody-logo.svg)
