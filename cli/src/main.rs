@@ -40,7 +40,6 @@ struct ArgsPrintText {
 
 struct App {
     dry_run: bool,
-    addr: Option<MacAddr6>,
     d30_config: Option<d30::D30Config>,
 }
 
@@ -48,7 +47,6 @@ impl App {
     fn new(args: &Cli) -> Self {
         Self {
             dry_run: args.dry_run,
-            addr: None,
             d30_config: None,
         }
     }

@@ -4,7 +4,7 @@ use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use image::{DynamicImage, ImageBuffer, Rgba};
-use log::warn;
+use log::{trace, warn};
 use rusttype::{Font, Scale};
 
 use dimensions::*;
@@ -30,7 +30,7 @@ const COLOR_BLACK: image::Rgba<u8> = image::Rgba([255u8, 255u8, 255u8, 255u8]);
 
 pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whatever> {
     let dim = Dimensions::new(320, 96);
-    dbg!(&dim);
+    trace!("{:#?}", &dim);
     let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
     let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
     let scale = Scale::uniform(font_scale);
