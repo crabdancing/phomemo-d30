@@ -2,7 +2,6 @@ use std::io;
 use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
 use advmac::MacAddr6;
-use bluetooth_serial_port_async::BtAddr;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use log::{trace, warn};
 use rusttype::{Font, Scale};
@@ -10,8 +9,7 @@ use rusttype::{Font, Scale};
 use dimensions::*;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use snafu::prelude::*;
-use snafu::{whatever, Error, OptionExt, ResultExt, Snafu, Whatever};
+use snafu::{Error, OptionExt, ResultExt, Snafu, Whatever};
 // These values are based on those used in polskafan's phomemo_d30 code, available here:
 // https://github.com/polskafan/phomemo_d30
 pub const INIT_BASE_FLAT: &[u8] = &[

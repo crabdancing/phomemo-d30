@@ -1,15 +1,19 @@
-// TODO: load from config file -- store default font size & machine name -> mac addr mappings
-// TODO: Encapsulate basic mechanisms for initializing connection and sending images
 // TODO: Figure out what's required for batch printing (e.g.,
 // can I just send the precursor bytes once, and then send multiple packed images?
+// TODO: Figure out how to handle non-precut labels
+// TODO: Figure out how to handle 'fruit' labels
+// TODO: Implement templates with fixed font sizes and positions
+// TODO: Implement preview feature
+// TODO: Implement 'arbitrary image' feature
+
 use std::{io::Write, sync::Arc};
 
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
 use d30::PrinterAddr;
-use log::{debug, warn};
-use snafu::{whatever, OptionExt, ResultExt, Whatever};
+use log::debug;
+use snafu::{whatever, ResultExt, Whatever};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Parser)]
