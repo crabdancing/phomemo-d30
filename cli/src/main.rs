@@ -7,6 +7,7 @@ use std::{io::Write, sync::Arc};
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
+use d30::PrinterAddr;
 use log::{debug, warn};
 use snafu::{OptionExt, ResultExt, Whatever};
 use tokio::sync::Mutex;
@@ -53,22 +54,38 @@ impl App {
     }
 
     fn cmd_print(&mut self, args: &ArgsPrintText) -> Result<(), Whatever> {
-        match self.d30_config {
-            Some(_) => {}
-            None => match d30::D30Config::read_d30_config() {
-                Ok(d30_config) => self.d30_config = Some(d30_config),
-                Err(e) => match e {
-                    d30::ReadD30ConfigError::CouldNotLoadToml {
-                        source: d30::LoadTomlError::CouldNotParse { source: _ },
-                    } => {}
-                    _ => {}
-                },
-            },
+        if self.d30_config.is_none() {
+            match d30::D30Config::read_d30_config() {
+                Ok(config) => {
+                    match &args.addr {
+                        Some(addr) => match config.resolve_addr(&addr) {
+                            Ok(resolved_addr) => {
+                                self.addr = Some(resolved_addr);
+                            }
+                            Err(e) => {
+                                warn!("{:#?}", e);
+                            }
+                        },
+                        None => {}
+                    }
+                    self.d30_config = Some(config);
+                }
+                Err(e) => {
+                    debug!("{:#?}", e);
+                }
+            }
         }
-        // if let Some(addr) = &args.addr {
-        //     self.addr = Some(addr.clone());
-        // } else {
-        // }
+
+        match (&self.d30_config, self.addr) {
+            (Some(config), None) => match config.resolve_default() {
+                Ok(addr) => self.addr = Some(addr),
+                Err(e) => {
+                    warn!("Error while resolving address: {:#?}", e);
+                }
+            },
+            _ => {}
+        }
+
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image(&args.text, args.scale)
             .with_whatever_context(|_| "Failed to generate image")?;
@@ -78,7 +95,7 @@ impl App {
         )
         .with_whatever_context(|_| "Failed to open socket")?;
 
-        let addr = self.addr.clone().with_whatever_context(|| {
+        let addr = self.addr.with_whatever_context(|| {
             "No address set. Set address via config file or `--addr` flag."
         })?;
 
