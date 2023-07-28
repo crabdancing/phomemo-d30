@@ -2,12 +2,12 @@
 // TODO: Encapsulate basic mechanisms for initializing connection and sending images
 // TODO: Figure out what's required for batch printing (e.g.,
 // can I just send the precursor bytes once, and then send multiple packed images?
-use std::{io::Write, str::FromStr, sync::Arc};
+use std::{io::Write, sync::Arc};
 
-use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
-use log::debug;
-use snafu::{ResultExt, Whatever};
+use d30::MacAddr;
+use log::{debug, warn};
+use snafu::{OptionExt, ResultExt, Whatever};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Parser)]
@@ -29,56 +29,40 @@ enum Commands {
 #[derive(clap::Args, Debug)]
 struct ArgsPrintText {
     #[arg(short, long)]
-    addr: MacAddr,
+    addr: Option<d30::PrinterAddr>,
     text: String,
     #[arg(short, long)]
     #[arg(default_value = "40")]
     scale: f32,
 }
 
-#[derive(Clone, Debug)]
-struct MacAddr([u8; 6]);
-
-impl Into<String> for MacAddr {
-    fn into(self) -> String {
-        format!(
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
-        )
-    }
-}
-
-impl FromStr for MacAddr {
-    type Err = std::num::ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        let mut bytes = [0u8; 6];
-        for (i, part) in parts.iter().enumerate() {
-            bytes[i] = u8::from_str_radix(part, 16)?;
-        }
-        Ok(MacAddr(bytes))
-    }
-}
-
-impl Into<BtAddr> for MacAddr {
-    fn into(self) -> BtAddr {
-        BtAddr(self.0)
-    }
-}
-
 struct App {
     dry_run: bool,
+    addr: Option<MacAddr>,
+    d30_config: Option<d30::D30Config>,
 }
 
 impl App {
     fn new(args: &Cli) -> Self {
         Self {
             dry_run: args.dry_run,
+            addr: None,
+            d30_config: None,
         }
     }
 
     fn cmd_print(&mut self, args: &ArgsPrintText) -> Result<(), Whatever> {
+        match self.d30_config {
+            Some(_) => {}
+            None => match d30::D30Config::read_d30_config() {
+                Ok(d30_config) => self.d30_config = Some(d30_config),
+                Err(e) => warn!("{:#?}", e),
+            },
+        }
+        // if let Some(addr) = &args.addr {
+        //     self.addr = Some(addr.clone());
+        // } else {
+        // }
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image(&args.text, args.scale)
             .with_whatever_context(|_| "Failed to generate image")?;
@@ -88,9 +72,13 @@ impl App {
         )
         .with_whatever_context(|_| "Failed to open socket")?;
 
+        let addr = self.addr.clone().with_whatever_context(|| {
+            "No address set. Set address via config file or `--addr` flag."
+        })?;
+
         if !self.dry_run {
             socket
-                .connect(args.addr.clone().into())
+                .connect(addr.into())
                 .with_whatever_context(|_| "Failed to connect")?;
         }
         debug!("Init connection");
