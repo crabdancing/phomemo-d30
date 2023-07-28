@@ -1,9 +1,13 @@
+use std::{fs, path::PathBuf, str::FromStr};
+
+use bluetooth_serial_port_async::BtAddr;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use rusttype::{Font, Scale};
 
 use dimensions::*;
-use snafu::{OptionExt, Whatever};
-
+use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
+use snafu::{whatever, OptionExt, ResultExt, Whatever};
 // These values are based on those used in polskafan's phomemo_d30 code, available here:
 // https://github.com/polskafan/phomemo_d30
 pub const INIT_BASE_FLAT: &[u8] = &[
@@ -88,4 +92,99 @@ pub fn pack_image(image: &DynamicImage) -> Vec<u8> {
         }
     }
     output
+}
+
+// MacAddr
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MacAddr([u8; 6]);
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum PrinterAddr {
+    MacAddr(MacAddr),
+    PrinterName(String),
+}
+
+impl Into<String> for MacAddr {
+    fn into(self) -> String {
+        format!(
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
+        )
+    }
+}
+
+impl Into<String> for PrinterAddr {
+    fn into(self) -> String {
+        match self {
+            PrinterAddr::MacAddr(addr) => addr.into(),
+            PrinterAddr::PrinterName(name) => name,
+        }
+    }
+}
+
+impl FromStr for MacAddr {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        let mut bytes = [0u8; 6];
+        for (i, part) in parts.iter().enumerate() {
+            bytes[i] = u8::from_str_radix(part, 16)?;
+        }
+        Ok(MacAddr(bytes))
+    }
+}
+
+impl FromStr for PrinterAddr {
+    type Err = std::num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.contains(":") {
+            Ok(PrinterAddr::MacAddr(MacAddr::from_str(s)?))
+        } else {
+            Ok(PrinterAddr::PrinterName(s.to_string()))
+        }
+    }
+}
+
+impl Into<BtAddr> for MacAddr {
+    fn into(self) -> BtAddr {
+        BtAddr(self.0)
+    }
+}
+
+// D30Config
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct D30Config {
+    default: PrinterAddr,
+    name_to_mac: IndexMap<String, MacAddr>,
+}
+
+impl D30Config {
+    pub fn load_toml(path: &PathBuf) -> Result<Self, Whatever> {
+        let contents = fs::read_to_string(path).with_whatever_context(|_| "")?;
+        Ok(toml::from_str(contents.as_str())
+            .with_whatever_context(|_| "Failed to serialize TOML D30 config.")?)
+    }
+
+    pub fn read_d30_config() -> Result<D30Config, Whatever> {
+        let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
+            .with_whatever_context(|_| "Could not find XDG path with prefix")?;
+        let config_path = phomemo_lib_path
+            .place_config_file("phomemo-config.toml")
+            .with_whatever_context(|_| "Could not place config file")?;
+        Ok(D30Config::load_toml(&config_path).with_whatever_context(|_| "Could not load TOML")?)
+    }
+
+    pub fn get_mac(&self, printer_addr: &PrinterAddr) -> Result<MacAddr, Whatever> {
+        match printer_addr {
+            PrinterAddr::MacAddr(addr) => Ok(addr.clone()),
+            PrinterAddr::PrinterName(name) => {
+                let mac = self.name_to_mac.get(name).with_whatever_context(|| "")?;
+                Ok(mac.clone())
+            }
+        }
+    }
 }
