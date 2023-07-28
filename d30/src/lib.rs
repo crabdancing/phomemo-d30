@@ -4,6 +4,7 @@ use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use image::{DynamicImage, ImageBuffer, Rgba};
+use log::warn;
 use rusttype::{Font, Scale};
 
 use dimensions::*;
@@ -137,6 +138,12 @@ impl Into<String> for &PrinterAddr {
     }
 }
 
+impl From<MacAddr6> for PrinterAddr {
+    fn from(value: MacAddr6) -> Self {
+        PrinterAddr::MacAddr(value)
+    }
+}
+
 impl FromStr for PrinterAddr {
     type Err = std::num::ParseIntError;
 
@@ -180,8 +187,8 @@ mod printer_addr_serde {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct D30Config {
     #[serde(with = "printer_addr_serde")]
-    default: PrinterAddr,
-    name_to_mac: IndexMap<String, MacAddr6>,
+    pub default: PrinterAddr,
+    pub resolution: IndexMap<String, MacAddr6>,
 }
 
 #[derive(Debug, Snafu)]
@@ -215,14 +222,18 @@ impl D30Config {
         let config_path = phomemo_lib_path
             .place_config_file("phomemo-config.toml")
             .context(CouldNotPlaceConfigFileSnafu)?;
-        Ok(D30Config::load_toml(&config_path).context(CouldNotLoadTomlSnafu)?)
+        let toml = D30Config::load_toml(&config_path);
+        if let Err(e) = &toml {
+            warn!("Failed to parse config file: {:#?}", e);
+        }
+        Ok(toml.context(CouldNotLoadTomlSnafu)?)
     }
 
-    pub fn get_mac(&self, printer_addr: &PrinterAddr) -> Result<MacAddr6, Whatever> {
+    pub fn resolve_addr(&self, printer_addr: &PrinterAddr) -> Result<MacAddr6, Whatever> {
         match printer_addr {
             PrinterAddr::MacAddr(addr) => Ok(addr.clone()),
             PrinterAddr::PrinterName(name) => {
-                let mac = self.name_to_mac.get(name).with_whatever_context(|| {
+                let mac = self.resolution.get(name).with_whatever_context(|| {
                     format!(
                         "Could not parse MAC address, or find in hostname table: {}",
                         name
@@ -231,5 +242,9 @@ impl D30Config {
                 Ok(mac.clone())
             }
         }
+    }
+
+    pub fn resolve_default(&self) -> Result<MacAddr6, Whatever> {
+        self.resolve_addr(&self.default)
     }
 }

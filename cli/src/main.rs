@@ -9,7 +9,7 @@ use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
 use d30::PrinterAddr;
 use log::{debug, warn};
-use snafu::{OptionExt, ResultExt, Whatever};
+use snafu::{whatever, OptionExt, ResultExt, Whatever};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Parser)]
@@ -53,39 +53,65 @@ impl App {
         }
     }
 
-    fn cmd_print(&mut self, args: &ArgsPrintText) -> Result<(), Whatever> {
-        if self.d30_config.is_none() {
-            match d30::D30Config::read_d30_config() {
-                Ok(config) => {
-                    match &args.addr {
-                        Some(addr) => match config.resolve_addr(&addr) {
-                            Ok(resolved_addr) => {
-                                self.addr = Some(resolved_addr);
-                            }
-                            Err(e) => {
-                                warn!("{:#?}", e);
-                            }
-                        },
-                        None => {}
-                    }
-                    self.d30_config = Some(config);
-                }
-                Err(e) => {
-                    debug!("{:#?}", e);
-                }
+    fn get_addr(
+        &mut self,
+        user_maybe_addr: Option<d30::PrinterAddr>,
+    ) -> Result<MacAddr6, Whatever> {
+        let addr: MacAddr6;
+        match (user_maybe_addr, d30::D30Config::read_d30_config()) {
+            // The case that the user has specified an address, and we have a config loaded
+            // We must use config to attempt to resolve the address
+            (Some(user_specified_addr), Ok(config)) => {
+                let resolved_addr = config.resolve_addr(&user_specified_addr)?;
+                addr = resolved_addr;
+                self.d30_config = Some(config);
             }
-        }
-
-        match (&self.d30_config, self.addr) {
-            (Some(config), None) => match config.resolve_default() {
-                Ok(addr) => self.addr = Some(addr),
-                Err(e) => {
-                    warn!("Error while resolving address: {:#?}", e);
+            // The case that the user has specified an address, but we do NOT have a config
+            // We must hope that the user gave us a fully quallified address & not a hostname
+            (Some(user_specified_addr), Err(_)) => match user_specified_addr {
+                PrinterAddr::MacAddr(user_addr) => {
+                    addr = user_addr;
+                }
+                PrinterAddr::PrinterName(name) => {
+                    whatever!(
+                        "Cannot resolve \"{}\" because config file could not be retrieved.\n\
+                        \tIf \"{}\" is meant to be an address rather than a device name, you should check your formatting,\n\
+                        \tas it does not look like a valid MAC address.",
+                        name, name
+                    );
                 }
             },
-            _ => {}
+            // No address on CLI, but there IS a config!
+            // Try to resolve from config
+            (None, Ok(config)) => match &config {
+                d30::D30Config {
+                    default: PrinterAddr::MacAddr(default_addr),
+                    resolution: _,
+                } => {
+                    addr = *default_addr;
+                }
+                d30::D30Config {
+                    default: PrinterAddr::PrinterName(_),
+                    resolution: _,
+                } => {
+                    addr = config
+                        .resolve_default()
+                        .with_whatever_context(|_| "Could not resolve default MAC address")?;
+                }
+            },
+            // No address specified on CLI, and errored when config load was attempted
+            // Just print errors and exit
+            (None, Err(_)) => {
+                whatever!(
+                    "You did not correctly specify an address on command line or config file."
+                )
+            }
         }
+        Ok(addr)
+    }
 
+    fn cmd_print(&mut self, args: &ArgsPrintText) -> Result<(), Whatever> {
+        let addr = self.get_addr(args.addr.clone())?;
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image(&args.text, args.scale)
             .with_whatever_context(|_| "Failed to generate image")?;
@@ -95,9 +121,9 @@ impl App {
         )
         .with_whatever_context(|_| "Failed to open socket")?;
 
-        let addr = self.addr.with_whatever_context(|| {
-            "No address set. Set address via config file or `--addr` flag."
-        })?;
+        // let addr = self.addr.with_whatever_context(|| {
+        //     "No address set. Set address via config file or `--addr` flag."
+        // })?;
 
         if !self.dry_run {
             socket
