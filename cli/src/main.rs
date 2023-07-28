@@ -113,15 +113,10 @@ impl App {
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image(&args.text, args.scale)
             .with_whatever_context(|_| "Failed to generate image")?;
-        // let addr = BtAddr([164, 7, 51, 76, 23, 54]);
         let mut socket = bluetooth_serial_port_async::BtSocket::new(
             bluetooth_serial_port_async::BtProtocol::RFCOMM,
         )
         .with_whatever_context(|_| "Failed to open socket")?;
-
-        // let addr = self.addr.with_whatever_context(|| {
-        //     "No address set. Set address via config file or `--addr` flag."
-        // })?;
 
         if !self.dry_run {
             socket
