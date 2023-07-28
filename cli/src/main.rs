@@ -57,7 +57,12 @@ impl App {
             Some(_) => {}
             None => match d30::D30Config::read_d30_config() {
                 Ok(d30_config) => self.d30_config = Some(d30_config),
-                Err(e) => warn!("{:#?}", e),
+                Err(e) => match e {
+                    d30::ReadD30ConfigError::CouldNotLoadToml {
+                        source: d30::LoadTomlError::CouldNotParse { source: _ },
+                    } => {}
+                    _ => {}
+                },
             },
         }
         // if let Some(addr) = &args.addr {

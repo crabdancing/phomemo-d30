@@ -1,3 +1,4 @@
+use std::io;
 use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
 use advmac::MacAddr6;
@@ -8,7 +9,8 @@ use rusttype::{Font, Scale};
 use dimensions::*;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use snafu::{whatever, OptionExt, ResultExt, Whatever};
+use snafu::prelude::*;
+use snafu::{whatever, Error, OptionExt, ResultExt, Snafu, Whatever};
 // These values are based on those used in polskafan's phomemo_d30 code, available here:
 // https://github.com/polskafan/phomemo_d30
 pub const INIT_BASE_FLAT: &[u8] = &[
@@ -182,19 +184,52 @@ pub struct D30Config {
     name_to_mac: IndexMap<String, MacAddr6>,
 }
 
+#[derive(Debug, Snafu)]
+pub enum LoadTomlError {
+    #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
+    CouldNotReadFile { source: io::Error },
+    #[snafu(display("Failed to serialize TOML D30 config"))]
+    CouldNotParse { source: toml::de::Error },
+}
+
+#[derive(Debug, Snafu)]
+pub enum ReadD30ConfigError {
+    #[snafu(display("Could not get XDG path"))]
+    CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
+    #[snafu(display("Could not place config file"))]
+    CouldNotPlaceConfigFile { source: io::Error },
+    #[snafu(display("Could not load TOML"))]
+    CouldNotLoadToml { source: LoadTomlError },
+}
+type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
+
 impl D30Config {
-    pub fn load_toml(path: &PathBuf) -> Result<Self, Whatever> {
-        let contents = fs::read_to_string(path).with_whatever_context(|_| "")?;
-        Ok(toml::from_str(contents.as_str())
-            .with_whatever_context(|_| "Failed to serialize TOML D30 config.")?)
+    pub fn load_toml(path: &PathBuf) -> Result<Self, LoadTomlError> {
+        let contents = fs::read_to_string(path).context(CouldNotReadFileSnafu)?;
+        Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
 
-    pub fn read_d30_config() -> Result<D30Config, Whatever> {
+    pub fn read_d30_config() -> Result<Self, ReadD30ConfigError> {
         let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
-            .with_whatever_context(|_| "Could not find XDG path with prefix")?;
+            .context(CouldNotGetXDGPathSnafu)?;
         let config_path = phomemo_lib_path
             .place_config_file("phomemo-config.toml")
-            .with_whatever_context(|_| "Could not place config file")?;
-        Ok(D30Config::load_toml(&config_path).with_whatever_context(|_| "Could not load TOML")?)
+            .context(CouldNotPlaceConfigFileSnafu)?;
+        Ok(D30Config::load_toml(&config_path).context(CouldNotLoadTomlSnafu)?)
+    }
+
+    pub fn get_mac(&self, printer_addr: &PrinterAddr) -> Result<MacAddr6, Whatever> {
+        match printer_addr {
+            PrinterAddr::MacAddr(addr) => Ok(addr.clone()),
+            PrinterAddr::PrinterName(name) => {
+                let mac = self.name_to_mac.get(name).with_whatever_context(|| {
+                    format!(
+                        "Could not parse MAC address, or find in hostname table: {}",
+                        name
+                    )
+                })?;
+                Ok(mac.clone())
+            }
+        }
     }
 }
