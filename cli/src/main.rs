@@ -4,8 +4,9 @@
 // can I just send the precursor bytes once, and then send multiple packed images?
 use std::{io::Write, sync::Arc};
 
+use advmac::MacAddr6;
+use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
-use d30::MacAddr;
 use log::{debug, warn};
 use snafu::{OptionExt, ResultExt, Whatever};
 use tokio::sync::Mutex;
@@ -38,7 +39,7 @@ struct ArgsPrintText {
 
 struct App {
     dry_run: bool,
-    addr: Option<MacAddr>,
+    addr: Option<MacAddr6>,
     d30_config: Option<d30::D30Config>,
 }
 
@@ -78,7 +79,7 @@ impl App {
 
         if !self.dry_run {
             socket
-                .connect(addr.into())
+                .connect(BtAddr(addr.to_array()))
                 .with_whatever_context(|_| "Failed to connect")?;
         }
         debug!("Init connection");

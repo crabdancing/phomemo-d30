@@ -1,5 +1,6 @@
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
+use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use image::{DynamicImage, ImageBuffer, Rgba};
 use rusttype::{Font, Scale};
@@ -94,45 +95,43 @@ pub fn pack_image(image: &DynamicImage) -> Vec<u8> {
     output
 }
 
-// MacAddr
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MacAddr([u8; 6]);
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PrinterAddr {
-    MacAddr(MacAddr),
+    MacAddr(MacAddr6),
     PrinterName(String),
 }
 
-impl Into<String> for MacAddr {
-    fn into(self) -> String {
-        format!(
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            self.0[0], self.0[1], self.0[2], self.0[3], self.0[4], self.0[5]
-        )
+impl PrinterAddr {
+    pub fn to_string(&self) -> String {
+        match self {
+            PrinterAddr::MacAddr(a) => a.to_string(),
+            PrinterAddr::PrinterName(s) => s.into(),
+        }
+    }
+
+    pub fn from_string(s: &str) -> Self {
+        match MacAddr6::from_str(s) {
+            Ok(addr) => PrinterAddr::MacAddr(addr),
+            Err(_) => PrinterAddr::PrinterName(s.to_owned()),
+        }
     }
 }
 
 impl Into<String> for PrinterAddr {
     fn into(self) -> String {
         match self {
-            PrinterAddr::MacAddr(addr) => addr.into(),
+            PrinterAddr::MacAddr(addr) => addr.to_string(),
             PrinterAddr::PrinterName(name) => name,
         }
     }
 }
 
-impl FromStr for MacAddr {
-    type Err = std::num::ParseIntError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(':').collect();
-        let mut bytes = [0u8; 6];
-        for (i, part) in parts.iter().enumerate() {
-            bytes[i] = u8::from_str_radix(part, 16)?;
+impl Into<String> for &PrinterAddr {
+    fn into(self) -> String {
+        match &self {
+            PrinterAddr::MacAddr(addr) => addr.to_string(),
+            PrinterAddr::PrinterName(name) => name.clone(),
         }
-        Ok(MacAddr(bytes))
     }
 }
 
@@ -140,17 +139,37 @@ impl FromStr for PrinterAddr {
     type Err = std::num::ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.contains(":") {
-            Ok(PrinterAddr::MacAddr(MacAddr::from_str(s)?))
-        } else {
-            Ok(PrinterAddr::PrinterName(s.to_string()))
+        match MacAddr6::from_str(s) {
+            Ok(v) => Ok(PrinterAddr::MacAddr(v)),
+            Err(_) => Ok(PrinterAddr::PrinterName(s.to_string())),
         }
     }
 }
 
-impl Into<BtAddr> for MacAddr {
-    fn into(self) -> BtAddr {
-        BtAddr(self.0)
+impl Display for PrinterAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s: String = self.into();
+        write!(f, "{}", s)?;
+        Ok(())
+    }
+}
+mod printer_addr_serde {
+    use super::PrinterAddr;
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &PrinterAddr, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<PrinterAddr, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(PrinterAddr::from_string(&s))
     }
 }
 
@@ -158,8 +177,9 @@ impl Into<BtAddr> for MacAddr {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct D30Config {
+    #[serde(with = "printer_addr_serde")]
     default: PrinterAddr,
-    name_to_mac: IndexMap<String, MacAddr>,
+    name_to_mac: IndexMap<String, MacAddr6>,
 }
 
 impl D30Config {
@@ -176,15 +196,5 @@ impl D30Config {
             .place_config_file("phomemo-config.toml")
             .with_whatever_context(|_| "Could not place config file")?;
         Ok(D30Config::load_toml(&config_path).with_whatever_context(|_| "Could not load TOML")?)
-    }
-
-    pub fn get_mac(&self, printer_addr: &PrinterAddr) -> Result<MacAddr, Whatever> {
-        match printer_addr {
-            PrinterAddr::MacAddr(addr) => Ok(addr.clone()),
-            PrinterAddr::PrinterName(name) => {
-                let mac = self.name_to_mac.get(name).with_whatever_context(|| "")?;
-                Ok(mac.clone())
-            }
-        }
     }
 }
