@@ -218,26 +218,20 @@ pub struct D30Config {
 }
 
 #[derive(Debug, Snafu)]
-pub enum LoadTomlError {
-    #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
-    CouldNotReadFile { source: io::Error },
-    #[snafu(display("Failed to serialize TOML D30 config"))]
-    CouldNotParse { source: toml::de::Error },
-}
-
-#[derive(Debug, Snafu)]
 pub enum ReadD30ConfigError {
     #[snafu(display("Could not get XDG path"))]
     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
     #[snafu(display("Could not place config file"))]
     CouldNotPlaceConfigFile { source: io::Error },
-    #[snafu(display("Could not load TOML"))]
-    CouldNotLoadToml { source: LoadTomlError },
+    #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
+    CouldNotReadFile { source: io::Error },
+    #[snafu(display("Failed to serialize TOML D30 config"))]
+    CouldNotParse { source: toml::de::Error },
 }
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
 impl D30Config {
-    pub fn load_toml(path: &PathBuf) -> Result<Self, LoadTomlError> {
+    pub fn load_toml(path: &PathBuf) -> Result<Self, ReadD30ConfigError> {
         let contents = fs::read_to_string(path).context(CouldNotReadFileSnafu)?;
         Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
@@ -248,11 +242,8 @@ impl D30Config {
         let config_path = phomemo_lib_path
             .place_config_file("phomemo-config.toml")
             .context(CouldNotPlaceConfigFileSnafu)?;
-        let toml = D30Config::load_toml(&config_path);
-        if let Err(e) = &toml {
-            warn!("Failed to parse config file: {:#?}", e);
-        }
-        Ok(toml.context(CouldNotLoadTomlSnafu)?)
+        let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
+        Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
 
     pub fn resolve_addr(&self, printer_addr: &PrinterAddr) -> Result<MacAddr6, Whatever> {

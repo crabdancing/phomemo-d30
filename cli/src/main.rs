@@ -15,7 +15,7 @@ use std::{ffi::OsString, io::Write, process::Stdio, sync::Arc};
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
-use d30::PrinterAddr;
+use d30::{PrinterAddr, ReadD30ConfigError};
 use image::DynamicImage;
 use log::debug;
 use rusttype::Scale;
@@ -30,8 +30,6 @@ struct Cli {
     command: Commands,
     #[arg(short, long)]
     dry_run: bool,
-    #[arg(short, long, default_value = "true")]
-    show_preview: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -48,26 +46,75 @@ struct ArgsPrintText {
     #[arg(short, long)]
     #[arg(default_value = "40")]
     scale: f32,
+    #[arg(short, long)]
+    show_preview: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct AppSettings {
+    show_preview: Option<bool>,
+}
+
+impl AppSettings {
+    fn load_config() -> Result<Self, ReadD30ConfigError> {
+        let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
+            .context(CouldNotGetXDGPathSnafu)?;
+        let config_path = phomemo_lib_path
+            .place_config_file("phomemo-cli-config.toml")
+            .context(CouldNotPlaceConfigFileSnafu)?;
+        let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
+        Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
+    }
+
+    fn get_show_preview(&self) -> bool {
+        self.show_preview.unwrap_or(false)
+    }
 }
 
 struct App {
     dry_run: bool,
     d30_config: Option<d30::D30Config>,
+    app_settings: Result<AppSettings, ReadD30ConfigError>,
     preview_cmd: Option<Vec<OsString>>,
     show_preview: bool,
 }
 
 impl App {
     fn new(args: &Cli) -> Self {
+        let app_settings = AppSettings::load_config();
         Self {
             dry_run: args.dry_run,
             d30_config: None,
+            app_settings,
             preview_cmd: None,
-            show_preview: args.show_preview,
+            show_preview: app_settings.get_show_preview(),
         }
     }
 
-    fn should_show_preview(&mut self) {}
+    fn compute_show_preview(&mut self) -> bool {
+        let mut show_preview: bool;
+        match (args.show_preview, app_settings) {
+            (Some(true), _) => {
+                show_preview = true;
+            }
+            (Some(false), _) => {
+                show_preview = false;
+            }
+            (
+                None,
+                Ok(AppSettings {
+                    show_preview: Some(true),
+                }),
+            ) => {
+                show_preview = true;
+            }
+
+            (None, _) => {
+                show_preview = false;
+            }
+        }
+        show_preview
+    }
 
     fn get_addr(
         &mut self,
@@ -91,9 +138,9 @@ impl App {
                 PrinterAddr::PrinterName(name) => {
                     whatever!(
                         "Cannot resolve \"{}\" because config file could not be retrieved.\n\
-                        \tIf \"{}\" is meant to be an address rather than a device name, you should check your formatting,\n\
+                        \tIf it is meant to be an address rather than a device name, you should check your formatting,\n\
                         \tas it does not look like a valid MAC address.",
-                        name, name
+                        name
                     );
                 }
             },
@@ -131,6 +178,8 @@ impl App {
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image_simple(&args.text, Scale::uniform(args.scale))
             .with_whatever_context(|_| "Failed to generate image")?;
+
+        self.compute_show_preview();
 
         if self.show_preview {
             let mut preview_image = image.rotate90();
@@ -221,8 +270,7 @@ async fn main() -> Result<(), Whatever> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    let args =
-        Cli::try_parse().with_whatever_context(|_| "Failed to parse command line arguments")?;
+    let args = Cli::parse();
     debug!("Args: {:#?}", &args);
     let app = Arc::new(Mutex::new(App::new(&args)));
 
