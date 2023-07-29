@@ -2,7 +2,7 @@ use std::io;
 use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
 use advmac::MacAddr6;
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
 use log::{trace, warn};
 use rusttype::{Font, Scale};
 
@@ -24,20 +24,20 @@ pub const INIT_BASE_FLAT: &[u8] = &[
 
 pub const IMG_PRECURSOR: &[u8] = &[31, 17, 36, 0, 27, 64, 29, 118, 48, 0, 12, 0, 64, 1]; // 1f1124001b401d7630000c004001
 
-const COLOR_BLACK: image::Rgba<u8> = image::Rgba([255u8, 255u8, 255u8, 255u8]);
+const COLOR_BLACK: image::Rgb<u8> = image::Rgb([255u8, 255u8, 255u8]);
+// const COLOR_BLACK: image::Rgba<u8> = image::Rgba([255u8, 255u8, 255u8, 255u8]);
 
-pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whatever> {
+pub fn generate_image_simple(text: &str, scale: Scale) -> Result<DynamicImage, Whatever> {
     let dim = Dimensions::new(320, 96);
     trace!("{:#?}", &dim);
     let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
     let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
-    let scale = Scale::uniform(font_scale);
 
     let actual_size: Dimensions = imageproc::drawing::text_size(scale, &font, &text).into();
 
     let txt_pos = (actual_size - dim) / -2.;
 
-    let mut canvas: ImageBuffer<Rgba<u8>, _> =
+    let mut canvas: ImageBuffer<Rgb<u8>, _> =
         ImageBuffer::new(dim.width() as u32, dim.height() as u32);
 
     imageproc::drawing::draw_text_mut(
@@ -50,9 +50,37 @@ pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whate
         text,
     );
 
-    let canvas = DynamicImage::from(canvas).rotate270();
+    Ok(DynamicImage::from(canvas).rotate270())
+}
 
-    Ok(canvas)
+pub fn generate_image_headed(
+    header: &str,
+    text: &str,
+    scale: Scale,
+) -> Result<DynamicImage, Whatever> {
+    let dim = Dimensions::new(320, 96);
+    trace!("{:#?}", &dim);
+    let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
+    let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
+
+    let actual_size: Dimensions = imageproc::drawing::text_size(scale, &font, &header).into();
+
+    let txt_pos = (actual_size - dim) / -2.;
+
+    let mut canvas: ImageBuffer<Rgb<u8>, _> =
+        ImageBuffer::new(dim.width() as u32, dim.height() as u32);
+
+    imageproc::drawing::draw_text_mut(
+        &mut canvas,
+        COLOR_BLACK,
+        txt_pos.x as i32,
+        txt_pos.y as i32,
+        scale,
+        &font,
+        header,
+    );
+
+    Ok(DynamicImage::from(canvas).rotate270())
 }
 
 pub fn pack_image(image: &DynamicImage) -> Vec<u8> {

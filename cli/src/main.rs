@@ -3,7 +3,9 @@
 // TODO: Figure out how to handle non-precut labels
 // TODO: Figure out how to handle 'fruit' labels
 // TODO: Implement templates with fixed font sizes and positions
-// TODO: Implement preview feature
+// TODO: toggle preview
+// TODO: toggle COMPILING preview into program
+// TODO: have window close
 // TODO: Implement 'arbitrary image' feature
 
 use std::{io::Write, sync::Arc};
@@ -12,7 +14,13 @@ use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
 use d30::PrinterAddr;
+use image::DynamicImage;
 use log::debug;
+use rusttype::Scale;
+use show_image::{
+    exit,
+    winit::event::{self, WindowEvent::KeyboardInput},
+};
 use snafu::{whatever, ResultExt, Whatever};
 use tokio::sync::Mutex;
 
@@ -115,8 +123,44 @@ impl App {
     fn cmd_print(&mut self, args: &ArgsPrintText) -> Result<(), Whatever> {
         let addr = self.get_addr(args.addr.clone())?;
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
-        let image = d30::generate_image(&args.text, args.scale)
+        let image = d30::generate_image_simple(&args.text, Scale::uniform(args.scale))
             .with_whatever_context(|_| "Failed to generate image")?;
+        let preview = false;
+        if preview {
+            let mut preview_image = image.rotate90();
+            preview_image.invert();
+            let window = show_image::create_window("image", Default::default())
+                .with_whatever_context(|_| "Failed to create window")?;
+            window
+                .set_image("image-001", preview_image)
+                .with_whatever_context(|_| "Cannot set image")?;
+            let mut cont = false;
+
+            for event in window
+                .event_channel()
+                .with_whatever_context(|_| "Error while handling event channel")?
+            {
+                println!("{:#?}", event);
+                if let show_image::event::WindowEvent::KeyboardInput(event) = event {
+                    if event.input.state.is_pressed() {
+                        match event.input.key_code {
+                            Some(event::VirtualKeyCode::Escape) => {
+                                break;
+                            }
+                            Some(event::VirtualKeyCode::Return) => {
+                                cont = true;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            if !cont {
+                exit(0);
+            }
+        }
         let mut socket = bluetooth_serial_port_async::BtSocket::new(
             bluetooth_serial_port_async::BtProtocol::RFCOMM,
         )
@@ -156,6 +200,7 @@ impl App {
 
 #[snafu::report]
 #[tokio::main]
+#[show_image::main]
 async fn main() -> Result<(), Whatever> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),

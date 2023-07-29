@@ -12,7 +12,7 @@
           inherit system;
         };
 
-        baseInputs = with pkgs; [ systemd.dev bluez.dev ];
+        baseInputs = with pkgs; [ pkg-config systemd.dev bluez.dev fontconfig.dev ];
 
         naersk' = pkgs.callPackage naersk {};
 
@@ -30,8 +30,8 @@
 
         # For `nix develop`:
         devShell = pkgs.mkShell {
-          nativeBuildInputs = with pkgs; [ rustc cargo pkg-config systemd.dev bluez.dev ];
-          PKG_CONFIG_PATH = "${pkgs.systemd.dev}/lib/pkgconfig:${pkgs.bluez.dev}/lib/pkgconfig";
+          nativeBuildInputs = with pkgs; [ rustc cargo ] ++ baseInputs;
+          PKG_CONFIG_PATH = "${pkgs.systemd.dev}/lib/pkgconfig:${pkgs.bluez.dev}/lib/pkgconfig${pkgs.fontconfig.dev}/lib/pkgconfig";
         };
       }
     );
