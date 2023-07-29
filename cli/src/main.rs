@@ -1,3 +1,5 @@
+// TODO: option to change preview program in config file
+// TODO: option to preview by default, or not preview by default, in config file
 // TODO: Figure out what's required for batch printing (e.g.,
 // can I just send the precursor bytes once, and then send multiple packed images?
 // TODO: Figure out how to handle non-precut labels
@@ -8,7 +10,7 @@
 // TODO: have window close
 // TODO: Implement 'arbitrary image' feature
 
-use std::{io::Write, sync::Arc};
+use std::{ffi::OsString, io::Write, process::Stdio, sync::Arc};
 
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
@@ -17,10 +19,6 @@ use d30::PrinterAddr;
 use image::DynamicImage;
 use log::debug;
 use rusttype::Scale;
-use show_image::{
-    exit,
-    winit::event::{self, WindowEvent::KeyboardInput},
-};
 use snafu::{whatever, ResultExt, Whatever};
 use tokio::sync::Mutex;
 
@@ -32,6 +30,8 @@ struct Cli {
     command: Commands,
     #[arg(short, long)]
     dry_run: bool,
+    #[arg(short, long, default_value = "true")]
+    show_preview: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -53,6 +53,8 @@ struct ArgsPrintText {
 struct App {
     dry_run: bool,
     d30_config: Option<d30::D30Config>,
+    preview_cmd: Option<Vec<OsString>>,
+    show_preview: bool,
 }
 
 impl App {
@@ -60,8 +62,12 @@ impl App {
         Self {
             dry_run: args.dry_run,
             d30_config: None,
+            preview_cmd: None,
+            show_preview: args.show_preview,
         }
     }
+
+    fn should_show_preview(&mut self) {}
 
     fn get_addr(
         &mut self,
@@ -125,42 +131,21 @@ impl App {
         debug!("Generating image {} with scale {}", &args.text, &args.scale);
         let image = d30::generate_image_simple(&args.text, Scale::uniform(args.scale))
             .with_whatever_context(|_| "Failed to generate image")?;
-        let preview = false;
-        if preview {
+
+        if self.show_preview {
             let mut preview_image = image.rotate90();
             preview_image.invert();
-            let window = show_image::create_window("image", Default::default())
-                .with_whatever_context(|_| "Failed to create window")?;
-            window
-                .set_image("image-001", preview_image)
-                .with_whatever_context(|_| "Cannot set image")?;
-            let mut cont = false;
-
-            for event in window
-                .event_channel()
-                .with_whatever_context(|_| "Error while handling event channel")?
+            self.show_preview(preview_image)?;
+            if !inquire::Confirm::new("Proceed with print?")
+                .with_default(false)
+                .prompt()
+                .with_whatever_context(|_| "Could not prompt user")?
             {
-                println!("{:#?}", event);
-                if let show_image::event::WindowEvent::KeyboardInput(event) = event {
-                    if event.input.state.is_pressed() {
-                        match event.input.key_code {
-                            Some(event::VirtualKeyCode::Escape) => {
-                                break;
-                            }
-                            Some(event::VirtualKeyCode::Return) => {
-                                cont = true;
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-
-            if !cont {
-                exit(0);
+                // Return early
+                return Ok(());
             }
         }
+
         let mut socket = bluetooth_serial_port_async::BtSocket::new(
             bluetooth_serial_port_async::BtProtocol::RFCOMM,
         )
@@ -196,17 +181,48 @@ impl App {
         }
         Ok(())
     }
+    fn show_preview(&self, preview_image: DynamicImage) -> Result<(), Whatever> {
+        let preview_image_file = temp_file::TempFile::new()
+            .with_whatever_context(|_| "Failed to make temporary file")?;
+        let path = preview_image_file
+            .path()
+            .with_extension("jpg")
+            .into_os_string();
+        preview_image
+            .save(&path)
+            .with_whatever_context(|_| "Failed to write to temporary file")?;
+        let args = self
+            .preview_cmd
+            .clone()
+            .unwrap_or(vec!["gio".into(), "open".into(), path]);
+        run_with_args(args)?;
+        Ok(())
+    }
+}
+
+fn run_with_args(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
+    match args.as_slice() {
+        [cmd, args @ ..] => std::process::Command::new(cmd)
+            .args(args)
+            .stderr(Stdio::piped())
+            .spawn()
+            .with_whatever_context(|_| format!("Failed to execute child process: {:?}", cmd)),
+
+        [] => {
+            whatever!("No program specified");
+        }
+    }
 }
 
 #[snafu::report]
 #[tokio::main]
-#[show_image::main]
 async fn main() -> Result<(), Whatever> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    let args = Cli::parse();
+    let args =
+        Cli::try_parse().with_whatever_context(|_| "Failed to parse command line arguments")?;
     debug!("Args: {:#?}", &args);
     let app = Arc::new(Mutex::new(App::new(&args)));
 

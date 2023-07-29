@@ -24,3 +24,5 @@ hex = "0.4.3"
 toml = "0.7.6"
 advmac = "1.0.3"
 show-image = { version = "0.13.1", features = ["png", "image"] }
+temp-file = "0.1.7"
+inquire = "0.6.2"
