@@ -2,8 +2,8 @@ use std::io;
 use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
 use advmac::MacAddr6;
-use image::{DynamicImage, ImageBuffer, Rgb, Rgba};
-use log::{trace, warn};
+use image::{DynamicImage, ImageBuffer, Rgb};
+use log::trace;
 use rusttype::{Font, Scale};
 
 use dimensions::*;
