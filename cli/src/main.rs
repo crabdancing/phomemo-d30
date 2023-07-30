@@ -17,6 +17,7 @@ use std::{
     process::Stdio,
 };
 
+use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{arg, Args, Parser, Subcommand};
 use image::DynamicImage;
@@ -25,7 +26,7 @@ use merge::Merge;
 use rusttype::Scale;
 use serde::Deserialize;
 use serde::Serialize;
-use snafu::{prelude::*, whatever, ResultExt, Whatever};
+use snafu::{prelude::*, whatever, OptionExt, ResultExt, Whatever};
 
 #[derive(Parser, Debug, Serialize, Deserialize, Clone, Merge)]
 // #[command(name = "d30")]
@@ -113,7 +114,7 @@ fn run(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
 
 #[derive(Debug, Snafu)]
 enum CmdPrintTextErrors {
-    #[snafu(display("Device not specified"))]
+    #[snafu(display("Device not specified. See `--help` for how to specify the device, or add it to the config file."))]
     DeviceNotSpecified,
     #[snafu(display("Failed to generate image"))]
     FailedToGenerateImage { source: Whatever },
@@ -137,18 +138,29 @@ enum CmdPrintTextErrors {
     FailedToFlush { source: std::io::Error },
     #[snafu(display("Scale of font not specified"))]
     ScaleNotSpecified,
+    #[snafu(display("Failed to resolve address. Check your Rust d30 config file"))]
+    FailedToResolveAddr { source: Whatever },
+    #[snafu(whatever)]
+    Whatever { message: String },
 }
 
 impl CmdPrintText {
     fn cmd_print_text(&self, app: &App) -> Result<(), CmdPrintTextErrors> {
         let scale = self.scale.with_context(|| ScaleNotSpecifiedSnafu)?;
         let dry_run = app.dry_run.unwrap_or(false);
-        let device = self.device.clone().unwrap_or(
-            app.d30_config
-                .clone()
-                .with_context(|| DeviceNotSpecifiedSnafu)?
-                .default,
-        );
+        let d30_config = app.d30_config.as_ref();
+
+        let d30_config_default_device = match d30_config {
+            Some(d30_config) => d30_config.default.clone(),
+            None => None,
+        };
+
+        let device = match (self.device.clone(), d30_config_default_device) {
+            (Some(device), _) => Ok(device),
+            (_, Some(device)) => Ok(device),
+            (_, _) => Err(CmdPrintTextErrors::DeviceNotSpecified),
+        }?;
+
         let image = d30::generate_image_simple(&self.text, Scale::uniform(scale.clone()))
             .context(FailedToGenerateImageSnafu)?;
         let mut preview_image = image.rotate90();
@@ -172,12 +184,19 @@ impl CmdPrintText {
         )
         .context(FailedToOpenSocketSnafu)?;
 
-        let device = &app
-            .d30_config
-            .as_ref()
-            .unwrap()
-            .resolve_addr(&device)
-            .unwrap();
+        // Resolve address, whether or not D30Config is available
+        let device = match d30_config {
+            Some(d30_config) => d30_config
+                .resolve_addr(&device)
+                .context(FailedToResolveAddrSnafu)?,
+            None => match device {
+                d30::PrinterAddr::MacAddr(mac_addr) => mac_addr,
+                d30::PrinterAddr::PrinterName(_) => {
+                    whatever!("Device identifier is not a valid MAC address, and there is no TOML lookup table");
+                }
+            },
+        };
+
         if !dry_run {
             socket
                 .connect(BtAddr(device.to_array()))
