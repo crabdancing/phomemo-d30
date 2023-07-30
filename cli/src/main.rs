@@ -20,41 +20,52 @@ use std::{
 
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
-use clap::{Parser, Subcommand};
+use clap::{arg, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use d30::PrinterAddr;
 use image::DynamicImage;
 use log::debug;
+use merge::Merge;
 use rusttype::Scale;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use snafu::{prelude::*, whatever, ResultExt, Whatever};
 use tokio::sync::Mutex;
 
-#[derive(Debug, Parser)]
-#[command(name = "d30")]
-#[command(about = "A userspace Phomemo D30 controller.")]
-struct Cli {
+#[derive(Parser, Debug, Serialize, Deserialize, Clone, Merge)]
+// #[command(name = "d30")]
+// #[command(about = "A userspace Phomemo D30 controller.")]
+struct App {
+    #[clap(short, long)]
+    dry_run: Option<bool>,
+    // #[clap(short, long)]
     #[command(subcommand)]
-    command: Commands,
-    #[arg(short, long)]
-    dry_run: bool,
+    #[merge(skip)]
+    commands: Option<Commands>,
+    #[clap(skip)]
+    d30_config: Option<d30::D30Config>,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand, Debug, Serialize, Deserialize, Clone)]
 enum Commands {
     #[clap(short_flag = 't')]
     PrintText(ArgsPrintText),
+    #[clap(short_flag = 'i')]
+    PrintImage,
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(Args, Debug, Serialize, Deserialize, Clone, Merge)]
 struct ArgsPrintText {
     #[arg(short, long)]
-    addr: Option<d30::PrinterAddr>,
+    device: Option<d30::PrinterAddr>,
+    #[merge(skip)]
     text: String,
     #[arg(short, long)]
     #[arg(default_value = "40")]
-    scale: f32,
+    scale: Option<f32>,
     #[arg(long, short = 'p')]
     show_preview: Option<bool>,
+    #[clap(short = 'c', long)]
+    preview_cmd: Option<Vec<OsString>>,
 }
 
 #[derive(Debug, Snafu)]
@@ -63,207 +74,32 @@ pub enum ReadD30CliConfigError {
     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
     #[snafu(display("Could not place config file"))]
     CouldNotPlaceConfigFile { source: io::Error },
-    #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
+    #[snafu(display("Failed to read in automatically detected D30 CLI configuration path"))]
     CouldNotReadFile { source: io::Error },
     #[snafu(display("Failed to serialize TOML D30 config"))]
     CouldNotParse { source: toml::de::Error },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct AppSettings {
-    show_preview: Option<bool>,
-}
-
-impl AppSettings {
-    fn load_config() -> Result<Self, ReadD30CliConfigError> {
-        let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
-            .context(CouldNotGetXDGPathSnafu)?;
-        let config_path = phomemo_lib_path
-            .place_config_file("phomemo-cli-config.toml")
-            .context(CouldNotPlaceConfigFileSnafu)?;
-        let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
-        Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
-    }
-}
-
-struct App {
-    dry_run: bool,
-    d30_config: Option<d30::D30Config>,
-    app_settings: Result<AppSettings, ReadD30CliConfigError>,
+fn cmd_show_preview(
     preview_cmd: Option<Vec<OsString>>,
-    show_preview: Option<bool>,
+    preview_image: DynamicImage,
+) -> Result<(), Whatever> {
+    let preview_image_file =
+        temp_file::TempFile::new().with_whatever_context(|_| "Failed to make temporary file")?;
+    let path = preview_image_file
+        .path()
+        .with_extension("jpg")
+        .into_os_string();
+    debug!("{:?}", &path);
+    preview_image
+        .save(&path)
+        .with_whatever_context(|_| "Failed to write to temporary file")?;
+    let args = preview_cmd.unwrap_or(vec!["oculante".into(), path]);
+    run(args)?;
+    Ok(())
 }
 
-impl App {
-    fn new(args: &Cli) -> Self {
-        let app_settings = AppSettings::load_config();
-        Self {
-            dry_run: args.dry_run,
-            d30_config: None,
-            app_settings,
-            preview_cmd: None,
-            show_preview: None,
-        }
-    }
-
-    fn compute_show_preview(&mut self, arg_show_preview: Option<bool>) -> bool {
-        let show_preview: bool;
-        match (arg_show_preview, &self.app_settings) {
-            (
-                None,
-                Ok(AppSettings {
-                    show_preview: Some(true),
-                }),
-            ) => {
-                show_preview = true;
-            }
-            (Some(true), _) => {
-                show_preview = true;
-            }
-            (Some(false), _) | (None, _) => {
-                show_preview = false;
-            }
-        }
-        debug!("show_preview: {:?}", show_preview);
-        self.show_preview = Some(show_preview);
-        show_preview
-    }
-
-    fn get_addr(
-        &mut self,
-        user_maybe_addr: Option<d30::PrinterAddr>,
-    ) -> Result<MacAddr6, Whatever> {
-        let addr: MacAddr6;
-        match (user_maybe_addr, d30::D30Config::read_d30_config()) {
-            // The case that the user has specified an address, and we have a config loaded
-            // We must use config to attempt to resolve the address
-            (Some(user_specified_addr), Ok(config)) => {
-                let resolved_addr = config.resolve_addr(&user_specified_addr)?;
-                addr = resolved_addr;
-                self.d30_config = Some(config);
-            }
-            // The case that the user has specified an address, but we do NOT have a config
-            // We must hope that the user gave us a fully quallified address & not a hostname
-            (Some(user_specified_addr), Err(_)) => match user_specified_addr {
-                PrinterAddr::MacAddr(user_addr) => {
-                    addr = user_addr;
-                }
-                PrinterAddr::PrinterName(name) => {
-                    whatever!(
-                        "Cannot resolve \"{}\" because config file could not be retrieved.\n\
-                        \tIf it is meant to be an address rather than a device name, you should check your formatting,\n\
-                        \tas it does not look like a valid MAC address.",
-                        name
-                    );
-                }
-            },
-            // No address on CLI, but there IS a config!
-            // Try to resolve from config
-            (None, Ok(config)) => match &config {
-                d30::D30Config {
-                    default: PrinterAddr::MacAddr(default_addr),
-                    resolution: _,
-                } => {
-                    addr = *default_addr;
-                }
-                d30::D30Config {
-                    default: PrinterAddr::PrinterName(_),
-                    resolution: _,
-                } => {
-                    addr = config
-                        .resolve_default()
-                        .with_whatever_context(|_| "Could not resolve default MAC address")?;
-                }
-            },
-            // No address specified on CLI, and errored when config load was attempted
-            // Just print errors and exit
-            (None, Err(_)) => {
-                whatever!(
-                    "You did not correctly specify an address on command line or config file."
-                )
-            }
-        }
-        Ok(addr)
-    }
-
-    fn cmd_print(&mut self, args: &ArgsPrintText) -> Result<(), Whatever> {
-        let addr = self.get_addr(args.addr.clone())?;
-        debug!("Generating image {} with scale {}", &args.text, &args.scale);
-        let image = d30::generate_image_simple(&args.text, Scale::uniform(args.scale))
-            .with_whatever_context(|_| "Failed to generate image")?;
-
-        let show_preview = self.compute_show_preview(args.show_preview);
-
-        if show_preview {
-            let mut preview_image = image.rotate90();
-            preview_image.invert();
-            self.show_preview(preview_image)?;
-            if !inquire::Confirm::new("Proceed with print?")
-                .with_default(false)
-                .prompt()
-                .with_whatever_context(|_| "Could not prompt user")?
-            {
-                // Return early
-                return Ok(());
-            }
-        }
-
-        let mut socket = bluetooth_serial_port_async::BtSocket::new(
-            bluetooth_serial_port_async::BtProtocol::RFCOMM,
-        )
-        .with_whatever_context(|_| "Failed to open socket")?;
-
-        if !self.dry_run {
-            socket
-                .connect(BtAddr(addr.to_array()))
-                .with_whatever_context(|_| "Failed to connect")?;
-        }
-        debug!("Init connection");
-        if !self.dry_run {
-            socket
-                .write(d30::INIT_BASE_FLAT)
-                .with_whatever_context(|_| "Failed to send magic init bytes")?;
-        }
-        let mut output = d30::IMG_PRECURSOR.to_vec();
-        debug!("Extend output");
-        if !self.dry_run {
-            output.extend(d30::pack_image(&image));
-        }
-        debug!("Write output to socket");
-        if !self.dry_run {
-            socket
-                .write(output.as_slice())
-                .with_whatever_context(|_| "Failed to write to socket")?;
-        }
-        debug!("Flush socket");
-        if !self.dry_run {
-            socket
-                .flush()
-                .with_whatever_context(|_| "Failed to flush socket")?;
-        }
-        Ok(())
-    }
-    fn show_preview(&self, preview_image: DynamicImage) -> Result<(), Whatever> {
-        let preview_image_file = temp_file::TempFile::new()
-            .with_whatever_context(|_| "Failed to make temporary file")?;
-        let path = preview_image_file
-            .path()
-            .with_extension("jpg")
-            .into_os_string();
-        debug!("{:?}", &path);
-        preview_image
-            .save(&path)
-            .with_whatever_context(|_| "Failed to write to temporary file")?;
-        let args = self
-            .preview_cmd
-            .clone()
-            .unwrap_or(vec!["gio".into(), "open".into(), path]);
-        run_with_args(args)?;
-        Ok(())
-    }
-}
-
-fn run_with_args(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
+fn run(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
     debug!("Running child process: {:?}", args);
     match args.as_slice() {
         [cmd, args @ ..] => std::process::Command::new(cmd)
@@ -278,6 +114,133 @@ fn run_with_args(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
         }
     }
 }
+impl ArgsPrintText {
+    fn cmd_print_text(&self, app: &App) -> Result<(), Whatever> {
+        match &self {
+            ArgsPrintText {
+                device: Some(device),
+                text,
+                scale: Some(scale),
+                show_preview,
+                preview_cmd,
+            } => {
+                let dry_run = app.dry_run.unwrap();
+                let image = d30::generate_image_simple(&text, Scale::uniform(scale.clone()))
+                    .with_whatever_context(|_| "Failed to generate image")?;
+                let mut preview_image = image.rotate90();
+                preview_image.invert();
+
+                if show_preview.unwrap_or(false) {
+                    cmd_show_preview(preview_cmd.clone(), preview_image)?;
+                    if !inquire::Confirm::new("Proceed with print?")
+                        .with_default(false)
+                        .prompt()
+                        .with_whatever_context(|_| "Could not prompt user")?
+                    {
+                        // Return early
+                        return Ok(());
+                    }
+                }
+
+                let mut socket = bluetooth_serial_port_async::BtSocket::new(
+                    bluetooth_serial_port_async::BtProtocol::RFCOMM,
+                )
+                .with_whatever_context(|_| "Failed to open socket")?;
+
+                let device = &app
+                    .d30_config
+                    .as_ref()
+                    .unwrap()
+                    .resolve_addr(device)
+                    .unwrap();
+                if !dry_run {
+                    socket
+                        .connect(BtAddr(device.to_array()))
+                        .with_whatever_context(|_| "Failed to connect")?;
+                }
+                debug!("Init connection");
+                if !dry_run {
+                    socket
+                        .write(d30::INIT_BASE_FLAT)
+                        .with_whatever_context(|_| "Failed to send magic init bytes")?;
+                }
+                let mut output = d30::IMG_PRECURSOR.to_vec();
+                debug!("Extend output");
+                if !dry_run {
+                    output.extend(d30::pack_image(&image));
+                }
+                debug!("Write output to socket");
+                if !dry_run {
+                    socket
+                        .write(output.as_slice())
+                        .with_whatever_context(|_| "Failed to write to socket")?;
+                }
+                debug!("Flush socket");
+                if !dry_run {
+                    socket
+                        .flush()
+                        .with_whatever_context(|_| "Failed to flush socket")?;
+                }
+            }
+
+            _ => {
+                whatever!(
+                    "Data is left unspecified in config file or on command line. See: {:#?}",
+                    &self
+                )
+            }
+        }
+        Ok(())
+    }
+}
+
+impl App {
+    fn load_config() -> Result<Self, ReadD30CliConfigError> {
+        let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
+            .context(CouldNotGetXDGPathSnafu)?;
+        let config_path = phomemo_lib_path
+            .place_config_file("phomemo-cli-config.toml")
+            .context(CouldNotPlaceConfigFileSnafu)?;
+        let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
+        Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
+    }
+
+    //     let mut socket = bluetooth_serial_port_async::BtSocket::new(
+    //         bluetooth_serial_port_async::BtProtocol::RFCOMM,
+    //     )
+    //     .with_whatever_context(|_| "Failed to open socket")?;
+
+    //     if !self.dry_run {
+    //         socket
+    //             .connect(BtAddr(addr.to_array()))
+    //             .with_whatever_context(|_| "Failed to connect")?;
+    //     }
+    //     debug!("Init connection");
+    //     if !self.dry_run {
+    //         socket
+    //             .write(d30::INIT_BASE_FLAT)
+    //             .with_whatever_context(|_| "Failed to send magic init bytes")?;
+    //     }
+    //     let mut output = d30::IMG_PRECURSOR.to_vec();
+    //     debug!("Extend output");
+    //     if !self.dry_run {
+    //         output.extend(d30::pack_image(&image));
+    //     }
+    //     debug!("Write output to socket");
+    //     if !self.dry_run {
+    //         socket
+    //             .write(output.as_slice())
+    //             .with_whatever_context(|_| "Failed to write to socket")?;
+    //     }
+    //     debug!("Flush socket");
+    //     if !self.dry_run {
+    //         socket
+    //             .flush()
+    //             .with_whatever_context(|_| "Failed to flush socket")?;
+    //     }
+    //     Ok(())
+    // }
+}
 
 #[snafu::report]
 #[tokio::main]
@@ -286,17 +249,36 @@ async fn main() -> Result<(), Whatever> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    let args = Cli::parse();
-    debug!("Args: {:#?}", &args);
-    let app = Arc::new(Mutex::new(App::new(&args)));
+    // let app = clap::Command::new("test").args(&Conf::clap_args());
 
-    match &args.command {
-        Commands::PrintText(args) => app
-            .lock()
-            .await
-            .cmd_print(&args)
-            .with_whatever_context(|_| "Could not complete print command")?,
+    let mut base = App::parse();
+
+    let file_layer =
+        App::load_config().with_whatever_context(|_| "Could not load config from file")?;
+
+    base.merge(file_layer);
+
+    match base.commands.clone() {
+        Some(Commands::PrintText(args)) => args.cmd_print_text(&base)?,
+        Some(Commands::PrintImage) => todo!(),
+        None => {
+            whatever!("You must specify a command. Pass `--help` flag to see available commands");
+        }
     }
+    // let conf = toml::to_string_pretty(&base).unwrap();
+
+    // let args = Cli::command().get_matches();
+    // println!("{}", &a);
+    // debug!("Args: {:#?}", &args);
+    // let app = Arc::new(Mutex::new(App::new(&args)));
+
+    // match &args.command {
+    //     Commands::PrintText(args) => app
+    //         .lock()
+    //         .await
+    //         .cmd_print(&args)
+    //         .with_whatever_context(|_| "Could not complete print command")?,
+    // }
 
     Ok(())
 }

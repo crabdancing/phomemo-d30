@@ -27,3 +27,5 @@ inquire = "0.6.2"
 serde = { version = "1.0.178", features = ["derive", "rc"] }
 xdg = "2.5.2"
 temp-file = "0.1.7"
+twelf = { version = "0.12.0", features = ["toml"] }
+merge = "0.1.0"
