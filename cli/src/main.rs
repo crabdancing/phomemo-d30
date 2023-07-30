@@ -114,28 +114,62 @@ fn run(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
         }
     }
 }
+
+#[derive(Debug, Snafu)]
+enum CmdPrintTextErrors {
+    #[snafu(display("Device not specified"))]
+    DeviceNotSpecified,
+    #[snafu(display("Failed to generate image"))]
+    FailedToGenerateImage { source: Whatever },
+    #[snafu(display("Could not show user a preview"))]
+    FailedToShowPreview { source: Whatever },
+    #[snafu(display("Could not prompt user"))]
+    CouldNotPromptUser { source: inquire::InquireError },
+    #[snafu(display("Failed to open socket"))]
+    FailedToOpenSocket {
+        source: bluetooth_serial_port_async::BtError,
+    },
+    #[snafu(display("Failed to connect to device"))]
+    FailedToConnect {
+        source: bluetooth_serial_port_async::BtError,
+    },
+    #[snafu(display("Failed to send magic init bytes"))]
+    FailedToSendMagic { source: std::io::Error },
+    #[snafu(display("Failed to write to socket"))]
+    FailedToWriteToSocket { source: std::io::Error },
+    #[snafu(display("Failed to flush"))]
+    FailedToFlush { source: std::io::Error },
+}
+
 impl ArgsPrintText {
-    fn cmd_print_text(&self, app: &App) -> Result<(), Whatever> {
+    fn cmd_print_text(&self, app: &App) -> Result<(), CmdPrintTextErrors> {
         match &self {
             ArgsPrintText {
-                device: Some(device),
+                device,
                 text,
                 scale: Some(scale),
                 show_preview,
                 preview_cmd,
             } => {
-                let dry_run = app.dry_run.unwrap();
+                let dry_run = app.dry_run.unwrap_or(false);
+                let device = device.clone().unwrap_or(
+                    app.d30_config
+                        .clone()
+                        .with_context(|| DeviceNotSpecifiedSnafu)?
+                        .default,
+                );
                 let image = d30::generate_image_simple(&text, Scale::uniform(scale.clone()))
-                    .with_whatever_context(|_| "Failed to generate image")?;
+                    .context(FailedToGenerateImageSnafu)?;
                 let mut preview_image = image.rotate90();
                 preview_image.invert();
 
                 if show_preview.unwrap_or(false) {
-                    cmd_show_preview(preview_cmd.clone(), preview_image)?;
+                    cmd_show_preview(preview_cmd.clone(), preview_image)
+                        .context(FailedToShowPreviewSnafu)?;
                     if !inquire::Confirm::new("Proceed with print?")
                         .with_default(false)
                         .prompt()
-                        .with_whatever_context(|_| "Could not prompt user")?
+                        .context(CouldNotPromptUserSnafu)?
                     {
                         // Return early
                         return Ok(());
@@ -145,24 +179,24 @@ impl ArgsPrintText {
                 let mut socket = bluetooth_serial_port_async::BtSocket::new(
                     bluetooth_serial_port_async::BtProtocol::RFCOMM,
                 )
-                .with_whatever_context(|_| "Failed to open socket")?;
+                .context(FailedToOpenSocketSnafu)?;
 
                 let device = &app
                     .d30_config
                     .as_ref()
                     .unwrap()
-                    .resolve_addr(device)
+                    .resolve_addr(&device)
                     .unwrap();
                 if !dry_run {
                     socket
                         .connect(BtAddr(device.to_array()))
-                        .with_whatever_context(|_| "Failed to connect")?;
+                        .context(FailedToConnectSnafu)?;
                 }
                 debug!("Init connection");
                 if !dry_run {
                     socket
                         .write(d30::INIT_BASE_FLAT)
-                        .with_whatever_context(|_| "Failed to send magic init bytes")?;
+                        .context(FailedToSendMagicSnafu)?;
                 }
                 let mut output = d30::IMG_PRECURSOR.to_vec();
                 debug!("Extend output");
@@ -173,22 +207,15 @@ impl ArgsPrintText {
                 if !dry_run {
                     socket
                         .write(output.as_slice())
-                        .with_whatever_context(|_| "Failed to write to socket")?;
+                        .context(FailedToWriteToSocketSnafu)?;
                 }
                 debug!("Flush socket");
                 if !dry_run {
-                    socket
-                        .flush()
-                        .with_whatever_context(|_| "Failed to flush socket")?;
+                    socket.flush().context(FailedToFlushSnafu)?;
                 }
             }
 
-            _ => {
-                whatever!(
-                    "Data is left unspecified in config file or on command line. See: {:#?}",
-                    &self
-                )
-            }
+            _ => {}
         }
         Ok(())
     }
@@ -253,13 +280,19 @@ async fn main() -> Result<(), Whatever> {
 
     let mut base = App::parse();
 
+    base.d30_config = Some(
+        d30::D30Config::read_d30_config().with_whatever_context(|_| "Failed to read D30 config")?,
+    );
+
     let file_layer =
         App::load_config().with_whatever_context(|_| "Could not load config from file")?;
 
     base.merge(file_layer);
 
     match base.commands.clone() {
-        Some(Commands::PrintText(args)) => args.cmd_print_text(&base)?,
+        Some(Commands::PrintText(args)) => args
+            .cmd_print_text(&base)
+            .with_whatever_context(|_| "Failed to print text")?,
         Some(Commands::PrintImage) => todo!(),
         None => {
             whatever!("You must specify a command. Pass `--help` flag to see available commands");
