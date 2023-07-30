@@ -15,13 +15,10 @@ use std::{
     fs,
     io::{self, Write},
     process::Stdio,
-    sync::Arc,
 };
 
-use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
-use clap::{arg, Args, CommandFactory, Parser, Subcommand, ValueEnum};
-use d30::PrinterAddr;
+use clap::{arg, Args, Parser, Subcommand};
 use image::DynamicImage;
 use log::debug;
 use merge::Merge;
@@ -29,7 +26,6 @@ use rusttype::Scale;
 use serde::Deserialize;
 use serde::Serialize;
 use snafu::{prelude::*, whatever, ResultExt, Whatever};
-use tokio::sync::Mutex;
 
 #[derive(Parser, Debug, Serialize, Deserialize, Clone, Merge)]
 // #[command(name = "d30")]
@@ -48,13 +44,13 @@ struct App {
 #[derive(Subcommand, Debug, Serialize, Deserialize, Clone)]
 enum Commands {
     #[clap(short_flag = 't')]
-    PrintText(ArgsPrintText),
+    PrintText(CmdPrintText),
     #[clap(short_flag = 'i')]
     PrintImage,
 }
 
 #[derive(Args, Debug, Serialize, Deserialize, Clone, Merge)]
-struct ArgsPrintText {
+struct CmdPrintText {
     #[arg(short, long)]
     device: Option<d30::PrinterAddr>,
     #[merge(skip)]
@@ -139,83 +135,74 @@ enum CmdPrintTextErrors {
     FailedToWriteToSocket { source: std::io::Error },
     #[snafu(display("Failed to flush"))]
     FailedToFlush { source: std::io::Error },
+    #[snafu(display("Scale of font not specified"))]
+    ScaleNotSpecified,
 }
 
-impl ArgsPrintText {
+impl CmdPrintText {
     fn cmd_print_text(&self, app: &App) -> Result<(), CmdPrintTextErrors> {
-        match &self {
-            ArgsPrintText {
-                device,
-                text,
-                scale: Some(scale),
-                show_preview,
-                preview_cmd,
-            } => {
-                let dry_run = app.dry_run.unwrap_or(false);
-                let device = device.clone().unwrap_or(
-                    app.d30_config
-                        .clone()
-                        .with_context(|| DeviceNotSpecifiedSnafu)?
-                        .default,
-                );
-                let image = d30::generate_image_simple(&text, Scale::uniform(scale.clone()))
-                    .context(FailedToGenerateImageSnafu)?;
-                let mut preview_image = image.rotate90();
-                preview_image.invert();
+        let scale = self.scale.with_context(|| ScaleNotSpecifiedSnafu)?;
+        let dry_run = app.dry_run.unwrap_or(false);
+        let device = self.device.clone().unwrap_or(
+            app.d30_config
+                .clone()
+                .with_context(|| DeviceNotSpecifiedSnafu)?
+                .default,
+        );
+        let image = d30::generate_image_simple(&self.text, Scale::uniform(scale.clone()))
+            .context(FailedToGenerateImageSnafu)?;
+        let mut preview_image = image.rotate90();
+        preview_image.invert();
 
-                if show_preview.unwrap_or(false) {
-                    cmd_show_preview(preview_cmd.clone(), preview_image)
-                        .context(FailedToShowPreviewSnafu)?;
-                    if !inquire::Confirm::new("Proceed with print?")
-                        .with_default(false)
-                        .prompt()
-                        .context(CouldNotPromptUserSnafu)?
-                    {
-                        // Return early
-                        return Ok(());
-                    }
-                }
-
-                let mut socket = bluetooth_serial_port_async::BtSocket::new(
-                    bluetooth_serial_port_async::BtProtocol::RFCOMM,
-                )
-                .context(FailedToOpenSocketSnafu)?;
-
-                let device = &app
-                    .d30_config
-                    .as_ref()
-                    .unwrap()
-                    .resolve_addr(&device)
-                    .unwrap();
-                if !dry_run {
-                    socket
-                        .connect(BtAddr(device.to_array()))
-                        .context(FailedToConnectSnafu)?;
-                }
-                debug!("Init connection");
-                if !dry_run {
-                    socket
-                        .write(d30::INIT_BASE_FLAT)
-                        .context(FailedToSendMagicSnafu)?;
-                }
-                let mut output = d30::IMG_PRECURSOR.to_vec();
-                debug!("Extend output");
-                if !dry_run {
-                    output.extend(d30::pack_image(&image));
-                }
-                debug!("Write output to socket");
-                if !dry_run {
-                    socket
-                        .write(output.as_slice())
-                        .context(FailedToWriteToSocketSnafu)?;
-                }
-                debug!("Flush socket");
-                if !dry_run {
-                    socket.flush().context(FailedToFlushSnafu)?;
-                }
+        if self.show_preview.unwrap_or(false) {
+            cmd_show_preview(self.preview_cmd.clone(), preview_image)
+                .context(FailedToShowPreviewSnafu)?;
+            if !inquire::Confirm::new("Proceed with print?")
+                .with_default(false)
+                .prompt()
+                .context(CouldNotPromptUserSnafu)?
+            {
+                // Return early
+                return Ok(());
             }
+        }
 
-            _ => {}
+        let mut socket = bluetooth_serial_port_async::BtSocket::new(
+            bluetooth_serial_port_async::BtProtocol::RFCOMM,
+        )
+        .context(FailedToOpenSocketSnafu)?;
+
+        let device = &app
+            .d30_config
+            .as_ref()
+            .unwrap()
+            .resolve_addr(&device)
+            .unwrap();
+        if !dry_run {
+            socket
+                .connect(BtAddr(device.to_array()))
+                .context(FailedToConnectSnafu)?;
+        }
+        debug!("Init connection");
+        if !dry_run {
+            socket
+                .write(d30::INIT_BASE_FLAT)
+                .context(FailedToSendMagicSnafu)?;
+        }
+        let mut output = d30::IMG_PRECURSOR.to_vec();
+        debug!("Extend output");
+        if !dry_run {
+            output.extend(d30::pack_image(&image));
+        }
+        debug!("Write output to socket");
+        if !dry_run {
+            socket
+                .write(output.as_slice())
+                .context(FailedToWriteToSocketSnafu)?;
+        }
+        debug!("Flush socket");
+        if !dry_run {
+            socket.flush().context(FailedToFlushSnafu)?;
         }
         Ok(())
     }
@@ -231,42 +218,6 @@ impl App {
         let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
         Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
-
-    //     let mut socket = bluetooth_serial_port_async::BtSocket::new(
-    //         bluetooth_serial_port_async::BtProtocol::RFCOMM,
-    //     )
-    //     .with_whatever_context(|_| "Failed to open socket")?;
-
-    //     if !self.dry_run {
-    //         socket
-    //             .connect(BtAddr(addr.to_array()))
-    //             .with_whatever_context(|_| "Failed to connect")?;
-    //     }
-    //     debug!("Init connection");
-    //     if !self.dry_run {
-    //         socket
-    //             .write(d30::INIT_BASE_FLAT)
-    //             .with_whatever_context(|_| "Failed to send magic init bytes")?;
-    //     }
-    //     let mut output = d30::IMG_PRECURSOR.to_vec();
-    //     debug!("Extend output");
-    //     if !self.dry_run {
-    //         output.extend(d30::pack_image(&image));
-    //     }
-    //     debug!("Write output to socket");
-    //     if !self.dry_run {
-    //         socket
-    //             .write(output.as_slice())
-    //             .with_whatever_context(|_| "Failed to write to socket")?;
-    //     }
-    //     debug!("Flush socket");
-    //     if !self.dry_run {
-    //         socket
-    //             .flush()
-    //             .with_whatever_context(|_| "Failed to flush socket")?;
-    //     }
-    //     Ok(())
-    // }
 }
 
 #[snafu::report]
@@ -275,8 +226,6 @@ async fn main() -> Result<(), Whatever> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
-
-    // let app = clap::Command::new("test").args(&Conf::clap_args());
 
     let mut base = App::parse();
 
@@ -290,7 +239,7 @@ async fn main() -> Result<(), Whatever> {
     base.merge(file_layer);
 
     match base.commands.clone() {
-        Some(Commands::PrintText(args)) => args
+        Some(Commands::PrintText(print_text)) => print_text
             .cmd_print_text(&base)
             .with_whatever_context(|_| "Failed to print text")?,
         Some(Commands::PrintImage) => todo!(),
@@ -298,20 +247,6 @@ async fn main() -> Result<(), Whatever> {
             whatever!("You must specify a command. Pass `--help` flag to see available commands");
         }
     }
-    // let conf = toml::to_string_pretty(&base).unwrap();
-
-    // let args = Cli::command().get_matches();
-    // println!("{}", &a);
-    // debug!("Args: {:#?}", &args);
-    // let app = Arc::new(Mutex::new(App::new(&args)));
-
-    // match &args.command {
-    //     Commands::PrintText(args) => app
-    //         .lock()
-    //         .await
-    //         .cmd_print(&args)
-    //         .with_whatever_context(|_| "Could not complete print command")?,
-    // }
 
     Ok(())
 }
