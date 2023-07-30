@@ -10,16 +10,23 @@
 // TODO: have window close
 // TODO: Implement 'arbitrary image' feature
 
-use std::{ffi::OsString, io::Write, process::Stdio, sync::Arc};
+use std::{
+    ffi::OsString,
+    fs,
+    io::{self, Write},
+    process::Stdio,
+    sync::Arc,
+};
 
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
-use d30::{PrinterAddr, ReadD30ConfigError};
+use d30::PrinterAddr;
 use image::DynamicImage;
 use log::debug;
 use rusttype::Scale;
-use snafu::{whatever, ResultExt, Whatever};
+use serde::{Deserialize, Serialize};
+use snafu::{prelude::*, whatever, ResultExt, Whatever};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Parser)]
@@ -46,17 +53,29 @@ struct ArgsPrintText {
     #[arg(short, long)]
     #[arg(default_value = "40")]
     scale: f32,
-    #[arg(short, long)]
+    #[arg(long, short = 'p')]
     show_preview: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Debug, Snafu)]
+pub enum ReadD30CliConfigError {
+    #[snafu(display("Could not get XDG path"))]
+    CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
+    #[snafu(display("Could not place config file"))]
+    CouldNotPlaceConfigFile { source: io::Error },
+    #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
+    CouldNotReadFile { source: io::Error },
+    #[snafu(display("Failed to serialize TOML D30 config"))]
+    CouldNotParse { source: toml::de::Error },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct AppSettings {
     show_preview: Option<bool>,
 }
 
 impl AppSettings {
-    fn load_config() -> Result<Self, ReadD30ConfigError> {
+    fn load_config() -> Result<Self, ReadD30CliConfigError> {
         let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
             .context(CouldNotGetXDGPathSnafu)?;
         let config_path = phomemo_lib_path
@@ -65,18 +84,14 @@ impl AppSettings {
         let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
         Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
-
-    fn get_show_preview(&self) -> bool {
-        self.show_preview.unwrap_or(false)
-    }
 }
 
 struct App {
     dry_run: bool,
     d30_config: Option<d30::D30Config>,
-    app_settings: Result<AppSettings, ReadD30ConfigError>,
+    app_settings: Result<AppSettings, ReadD30CliConfigError>,
     preview_cmd: Option<Vec<OsString>>,
-    show_preview: bool,
+    show_preview: Option<bool>,
 }
 
 impl App {
@@ -87,19 +102,13 @@ impl App {
             d30_config: None,
             app_settings,
             preview_cmd: None,
-            show_preview: app_settings.get_show_preview(),
+            show_preview: None,
         }
     }
 
-    fn compute_show_preview(&mut self) -> bool {
-        let mut show_preview: bool;
-        match (args.show_preview, app_settings) {
-            (Some(true), _) => {
-                show_preview = true;
-            }
-            (Some(false), _) => {
-                show_preview = false;
-            }
+    fn compute_show_preview(&mut self, arg_show_preview: Option<bool>) -> bool {
+        let show_preview: bool;
+        match (arg_show_preview, &self.app_settings) {
             (
                 None,
                 Ok(AppSettings {
@@ -108,11 +117,15 @@ impl App {
             ) => {
                 show_preview = true;
             }
-
-            (None, _) => {
+            (Some(true), _) => {
+                show_preview = true;
+            }
+            (Some(false), _) | (None, _) => {
                 show_preview = false;
             }
         }
+        debug!("show_preview: {:?}", show_preview);
+        self.show_preview = Some(show_preview);
         show_preview
     }
 
@@ -179,9 +192,9 @@ impl App {
         let image = d30::generate_image_simple(&args.text, Scale::uniform(args.scale))
             .with_whatever_context(|_| "Failed to generate image")?;
 
-        self.compute_show_preview();
+        let show_preview = self.compute_show_preview(args.show_preview);
 
-        if self.show_preview {
+        if show_preview {
             let mut preview_image = image.rotate90();
             preview_image.invert();
             self.show_preview(preview_image)?;
@@ -237,6 +250,7 @@ impl App {
             .path()
             .with_extension("jpg")
             .into_os_string();
+        debug!("{:?}", &path);
         preview_image
             .save(&path)
             .with_whatever_context(|_| "Failed to write to temporary file")?;
@@ -250,10 +264,12 @@ impl App {
 }
 
 fn run_with_args(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
+    debug!("Running child process: {:?}", args);
     match args.as_slice() {
         [cmd, args @ ..] => std::process::Command::new(cmd)
             .args(args)
-            .stderr(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .with_whatever_context(|_| format!("Failed to execute child process: {:?}", cmd)),
 
