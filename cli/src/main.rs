@@ -26,9 +26,10 @@ use merge::Merge;
 use rusttype::Scale;
 use serde::Deserialize;
 use serde::Serialize;
+use serde_merge::omerge;
 use snafu::{prelude::*, whatever, OptionExt, ResultExt, Whatever};
 
-#[derive(Parser, Debug, Serialize, Deserialize, Clone, Merge)]
+#[derive(Parser, Debug, Serialize, Deserialize, Clone)]
 // #[command(name = "d30")]
 // #[command(about = "A userspace Phomemo D30 controller.")]
 struct App {
@@ -36,7 +37,7 @@ struct App {
     dry_run: Option<bool>,
     // #[clap(short, long)]
     #[command(subcommand)]
-    #[merge(skip)]
+    // #[merge(skip)]
     commands: Option<Commands>,
     #[clap(skip)]
     d30_config: Option<d30::D30Config>,
@@ -50,14 +51,14 @@ enum Commands {
     PrintImage,
 }
 
-#[derive(Args, Debug, Serialize, Deserialize, Clone, Merge)]
+#[derive(Args, Debug, Serialize, Deserialize, Clone)]
 struct CmdPrintText {
     #[arg(short, long)]
     device: Option<d30::PrinterAddr>,
-    #[merge(skip)]
+    // #[merge(skip)]
     text: String,
     #[arg(short, long)]
-    #[arg(default_value = "40")]
+    // #[arg(default_value = "40")]
     scale: Option<f32>,
     #[arg(long, short = 'p')]
     show_preview: Option<bool>,
@@ -91,7 +92,7 @@ fn cmd_show_preview(
     preview_image
         .save(&path)
         .with_whatever_context(|_| "Failed to write to temporary file")?;
-    let args = preview_cmd.unwrap_or(vec!["oculante".into(), path]);
+    let args = preview_cmd.unwrap_or(vec!["gio".into(), "open".into(), path]);
     run(args)?;
     Ok(())
 }
@@ -252,14 +253,21 @@ async fn main() -> Result<(), Whatever> {
         d30::D30Config::read_d30_config().with_whatever_context(|_| "Failed to read D30 config")?,
     );
 
-    let file_layer =
+    let default: App = App {
+        dry_run: Some(true),
+        commands: None,
+        d30_config: None,
+    };
+    let mut file_layer =
         App::load_config().with_whatever_context(|_| "Could not load config from file")?;
 
-    base.merge(file_layer);
-
-    match base.commands.clone() {
+    // file_layer.merge(base);
+    // let result: App = omerge(base, file_layer).unwrap();
+    // let result: App = omerge(default, result).unwrap();
+    let result = file_layer;
+    match result.commands.clone() {
         Some(Commands::PrintText(print_text)) => print_text
-            .cmd_print_text(&base)
+            .cmd_print_text(&result)
             .with_whatever_context(|_| "Failed to print text")?,
         Some(Commands::PrintImage) => todo!(),
         None => {
