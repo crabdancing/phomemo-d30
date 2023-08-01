@@ -23,3 +23,6 @@ log = "0.4.19"
 hex = "0.4.3"
 toml = "0.7.6"
 advmac = "1.0.3"
+temp-file = "0.1.7"
+xdg = "2.5.2"
+serde = { version = "1.0.180", features = ["derive", "rc"] }
