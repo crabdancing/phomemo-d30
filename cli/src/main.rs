@@ -112,7 +112,7 @@ fn run(args: Vec<String>) -> Result<std::process::Child, Whatever> {
 }
 
 fn wezterm_imgcat(target: impl AsRef<str>) -> Result<(), Whatever> {
-    let status = std::process::Command::new("wezterm")
+    std::process::Command::new("wezterm")
         .arg("imgcat")
         .arg(target.as_ref())
         .stdout(Stdio::inherit())
@@ -263,22 +263,29 @@ async fn main() -> Result<(), Whatever> {
 
     let args = Arguments::parse();
     debug!("Args: {:#?}", &args);
-    let mut app = &args;
     match Config::load_config() {
         Ok(mut config) => match &args.command {
             Commands::PrintText(args) => {
                 cmd_print(&mut config, &args)
                     .with_whatever_context(|_| "Could not complete print command")?;
-                Ok(())
             }
         },
-        Err(ReadD30CliConfigError::CouldNotParse { source: e }) => {
-            whatever!("Could not parse: {}", e)
-        }
-        Err(ReadD30CliConfigError::CouldNotGetXDGPath { source: _ })
-        | Err(ReadD30CliConfigError::CouldNotReadFile { source: _ })
-        | Err(ReadD30CliConfigError::CouldNotPlaceConfigFile { source: _ }) => Ok(()),
-    }?;
 
+        Err(ReadD30CliConfigError::CouldNotParse { source: e }) => {
+            whatever!("Could not parse: {}", e);
+        }
+
+        Err(ReadD30CliConfigError::CouldNotGetXDGPath { source }) => {
+            debug!("Could not get XDG path: {}", source);
+        }
+
+        Err(ReadD30CliConfigError::CouldNotReadFile { source }) => {
+            debug!("Could not read file: {}", source);
+        }
+
+        Err(ReadD30CliConfigError::CouldNotPlaceConfigFile { source }) => {
+            debug!("Could not place config file: {}", source);
+        }
+    }
     Ok(())
 }
