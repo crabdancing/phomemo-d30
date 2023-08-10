@@ -26,3 +26,4 @@ advmac = "1.0.3"
 temp-file = "0.1.7"
 xdg = "2.5.2"
 serde = { version = "1.0.180", features = ["derive", "rc"] }
+inquire = "0.6.2"

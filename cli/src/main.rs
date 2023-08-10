@@ -42,7 +42,7 @@ enum Commands {
 
 #[derive(clap::Args, Debug)]
 struct ArgsPrintText {
-    #[arg(short, long)]
+    #[arg(long)]
     dry_run: bool,
     #[arg(short, long)]
     device: Option<d30::PrinterAddr>,
@@ -175,42 +175,53 @@ fn get_addr(
 
 fn cmd_print(state: &mut State, args: &ArgsPrintText) -> Result<(), Whatever> {
     let dry_run = state.dry_run.unwrap_or(false) || args.dry_run;
-    let preview = state.preview.unwrap_or(false);
+    let show_preview = state.preview.unwrap_or(false) || args.preview;
     let addr = get_addr(state, args.device.clone())?;
     debug!("Generating image {} with scale {}", &args.text, &args.scale);
     let image = d30::generate_image(&args.text, args.scale)
         .with_whatever_context(|_| "Failed to generate image")?;
     let mut preview_image = image.rotate90();
     preview_image.invert();
-    cmd_show_preview(state.preview_cmd, preview_image);
+    if show_preview {
+        cmd_show_preview(state.preview_cmd.clone(), preview_image)?;
+        let should_accept = inquire::Confirm::new("Displaying preview. Accept this print?")
+            .with_default(false)
+            .prompt_skippable()
+            .with_whatever_context(|_| "Failed to ask user whether to accept")?
+            .unwrap_or(false);
+        if !should_accept {
+            println!("Goodbye UwU");
+            return Ok(());
+        }
+    }
     let mut socket =
         bluetooth_serial_port_async::BtSocket::new(bluetooth_serial_port_async::BtProtocol::RFCOMM)
             .with_whatever_context(|_| "Failed to open socket")?;
 
-    if dry_run {
+    if !dry_run {
         socket
             .connect(BtAddr(addr.to_array()))
             .with_whatever_context(|_| "Failed to connect")?;
     }
     debug!("Init connection");
-    if dry_run {
+    if !dry_run {
         socket
             .write(d30::INIT_BASE_FLAT)
             .with_whatever_context(|_| "Failed to send magic init bytes")?;
     }
     let mut output = d30::IMG_PRECURSOR.to_vec();
     debug!("Extend output");
-    if dry_run {
+    if !dry_run {
         output.extend(d30::pack_image(&image));
     }
     debug!("Write output to socket");
-    if dry_run {
+    if !dry_run {
         socket
             .write(output.as_slice())
             .with_whatever_context(|_| "Failed to write to socket")?;
     }
     debug!("Flush socket");
-    if dry_run {
+    if !dry_run {
         socket
             .flush()
             .with_whatever_context(|_| "Failed to flush socket")?;
