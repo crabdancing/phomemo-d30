@@ -10,9 +10,7 @@ use std::{
     ffi::OsString,
     fs,
     io::{self, Write},
-    ops::DerefMut,
     process::Stdio,
-    sync::Arc,
 };
 
 use advmac::MacAddr6;
@@ -23,7 +21,6 @@ use image::DynamicImage;
 use log::debug;
 use serde::{Deserialize, Serialize};
 use snafu::{whatever, ResultExt, Snafu, Whatever};
-use tokio::sync::Mutex;
 
 #[derive(Debug, Parser)]
 #[command(name = "d30")]
@@ -57,11 +54,20 @@ struct ArgsPrintText {
 // ---------------------
 // End CLI Processing
 
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+enum PreviewType {
+    Wezterm,
+    CustomCommand(Vec<String>),
+    #[default]
+    Gio,
+}
+
 #[derive(Serialize, Deserialize)]
-struct State {
+struct Config {
     dry_run: Option<bool>,
-    preview: Option<bool>,
-    preview_cmd: Option<Vec<OsString>>,
+    enable_preview: Option<bool>,
+    preview: Option<PreviewType>,
     d30_config: Option<d30::D30Config>,
 }
 
@@ -77,13 +83,7 @@ pub enum ReadD30CliConfigError {
     CouldNotParse { source: toml::de::Error },
 }
 
-impl State {
-    // fn new(args: &Arguments) -> Self {
-    //     Self {
-    //         dry_run: args.dry_run,
-    //         d30_config: None,
-    //     }
-    // }
+impl Config {
     fn load_config() -> Result<Self, ReadD30CliConfigError> {
         let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
             .context(CouldNotGetXDGPathSnafu)?;
@@ -95,26 +95,7 @@ impl State {
     }
 }
 
-fn cmd_show_preview(
-    preview_cmd: Option<Vec<OsString>>,
-    preview_image: DynamicImage,
-) -> Result<(), Whatever> {
-    let preview_image_file =
-        temp_file::TempFile::new().with_whatever_context(|_| "Failed to make temporary file")?;
-    let path = preview_image_file
-        .path()
-        .with_extension("jpg")
-        .into_os_string();
-    debug!("{:?}", &path);
-    preview_image
-        .save(&path)
-        .with_whatever_context(|_| "Failed to write to temporary file")?;
-    let args = preview_cmd.unwrap_or(vec!["gio".into(), "open".into(), path]);
-    run(args)?;
-    Ok(())
-}
-
-fn run(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
+fn run(args: Vec<String>) -> Result<std::process::Child, Whatever> {
     debug!("Running child process: {:?}", args);
     match args.as_slice() {
         [cmd, args @ ..] => std::process::Command::new(cmd)
@@ -130,18 +111,62 @@ fn run(args: Vec<OsString>) -> Result<std::process::Child, Whatever> {
     }
 }
 
+fn wezterm_imgcat(target: impl AsRef<str>) -> Result<(), Whatever> {
+    let status = std::process::Command::new("wezterm")
+        .arg("imgcat")
+        .arg(target.as_ref())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_whatever_context(|_| format!("Failed to call `wezterm` binary"))?;
+    Ok(())
+}
+
+fn cmd_show_preview(
+    preview: Option<PreviewType>,
+    preview_image: DynamicImage,
+) -> Result<(), Whatever> {
+    let preview = preview.unwrap_or(PreviewType::Gio);
+    let preview_image_file =
+        temp_file::TempFile::new().with_whatever_context(|_| "Failed to make temporary file")?;
+    let path = preview_image_file
+        .path()
+        .with_extension("jpg")
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    debug!("{:?}", &path);
+    preview_image
+        .save(&path)
+        .with_whatever_context(|_| "Failed to write to temporary file")?;
+    debug!("Preview type: {:?}", preview);
+    match preview {
+        PreviewType::Wezterm => {
+            wezterm_imgcat(&path)?;
+        }
+        PreviewType::CustomCommand(mut custom_cmd) => {
+            custom_cmd.push(path);
+            run(custom_cmd)?;
+        }
+        PreviewType::Gio => {
+            run(vec!["gio".to_string(), "open".to_string(), path])?;
+        }
+    }
+    Ok(())
+}
+
 fn get_addr(
-    state: &mut State,
+    config: &mut Config,
     user_maybe_addr: Option<d30::PrinterAddr>,
 ) -> Result<MacAddr6, Whatever> {
     let addr: MacAddr6;
     match (user_maybe_addr, d30::D30Config::read_d30_config()) {
         // The case that the user has specified an address, and we have a config loaded
         // We must use config to attempt to resolve the address
-        (Some(user_specified_addr), Ok(config)) => {
-            let resolved_addr = config.resolve_addr(&user_specified_addr)?;
+        (Some(user_specified_addr), Ok(d30_config)) => {
+            let resolved_addr = d30_config.resolve_addr(&user_specified_addr)?;
             addr = resolved_addr;
-            state.d30_config = Some(config);
+            config.d30_config = Some(d30_config);
         }
         // The case that the user has specified an address, but we do NOT have a config
         // We must hope that the user gave us a fully quallified address & not a hostname
@@ -173,17 +198,17 @@ fn get_addr(
     Ok(addr)
 }
 
-fn cmd_print(state: &mut State, args: &ArgsPrintText) -> Result<(), Whatever> {
-    let dry_run = state.dry_run.unwrap_or(false) || args.dry_run;
-    let show_preview = state.preview.unwrap_or(false) || args.preview;
-    let addr = get_addr(state, args.device.clone())?;
+fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> {
+    let dry_run = config.dry_run.unwrap_or(false) || args.dry_run;
+    let show_preview = config.enable_preview.unwrap_or(false) || args.preview;
+    let addr = get_addr(config, args.device.clone())?;
     debug!("Generating image {} with scale {}", &args.text, &args.scale);
     let image = d30::generate_image(&args.text, args.scale)
         .with_whatever_context(|_| "Failed to generate image")?;
     let mut preview_image = image.rotate90();
     preview_image.invert();
     if show_preview {
-        cmd_show_preview(state.preview_cmd.clone(), preview_image)?;
+        cmd_show_preview(config.preview.clone(), preview_image)?;
         let should_accept = inquire::Confirm::new("Displaying preview. Accept this print?")
             .with_default(false)
             .prompt_skippable()
@@ -239,13 +264,21 @@ async fn main() -> Result<(), Whatever> {
     let args = Arguments::parse();
     debug!("Args: {:#?}", &args);
     let mut app = &args;
-    match State::load_config() {
-        Ok(mut state) => match &args.command {
-            Commands::PrintText(args) => cmd_print(&mut state, &args)
-                .with_whatever_context(|_| "Could not complete print command")?,
+    match Config::load_config() {
+        Ok(mut config) => match &args.command {
+            Commands::PrintText(args) => {
+                cmd_print(&mut config, &args)
+                    .with_whatever_context(|_| "Could not complete print command")?;
+                Ok(())
+            }
         },
-        Err(_) => todo!(),
-    }
+        Err(ReadD30CliConfigError::CouldNotParse { source: e }) => {
+            whatever!("Could not parse: {}", e)
+        }
+        Err(ReadD30CliConfigError::CouldNotGetXDGPath { source: _ })
+        | Err(ReadD30CliConfigError::CouldNotReadFile { source: _ })
+        | Err(ReadD30CliConfigError::CouldNotPlaceConfigFile { source: _ }) => Ok(()),
+    }?;
 
     Ok(())
 }
