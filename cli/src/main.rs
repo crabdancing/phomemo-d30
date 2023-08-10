@@ -6,10 +6,9 @@
 // TODO: Implement 'arbitrary image' feature
 
 use std::{
-    ffi::OsString,
     fs,
     io::{self, Write},
-    process::Stdio,
+    process::{exit, Stdio},
 };
 
 use advmac::MacAddr6;
@@ -19,6 +18,7 @@ use d30::PrinterAddr;
 use image::DynamicImage;
 use log::debug;
 use serde::{Deserialize, Serialize};
+use show_image::{event::WindowKeyboardInputEvent, winit::event::KeyboardInput};
 use snafu::{whatever, ResultExt, Snafu, Whatever};
 
 #[derive(Debug, Parser)]
@@ -53,11 +53,12 @@ struct ArgsPrintText {
 // ---------------------
 // End CLI Processing
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum PreviewType {
     Wezterm,
     CustomCommand(Vec<String>),
+    ShowImage,
     #[default]
     Gio,
 }
@@ -123,30 +124,90 @@ fn wezterm_imgcat(target: impl AsRef<str>) -> Result<(), Whatever> {
 
 fn cmd_show_preview(
     preview: Option<PreviewType>,
-    preview_image: DynamicImage,
+    mut preview_image: DynamicImage,
 ) -> Result<(), Whatever> {
     let preview = preview.unwrap_or(PreviewType::Gio);
     let preview_image_file =
         temp_file::TempFile::new().with_whatever_context(|_| "Failed to make temporary file")?;
+
     let path = preview_image_file
         .path()
         .with_extension("jpg")
         .into_os_string()
         .into_string()
         .unwrap();
+
     debug!("{:?}", &path);
-    preview_image
-        .save(&path)
-        .with_whatever_context(|_| "Failed to write to temporary file")?;
+
+    if preview != PreviewType::ShowImage {
+        preview_image
+            .save(&path)
+            .with_whatever_context(|_| "Failed to write to temporary file")?;
+    }
+
     debug!("Preview type: {:?}", preview);
+
     match preview {
         PreviewType::Wezterm => {
             wezterm_imgcat(&path)?;
         }
+
         PreviewType::CustomCommand(mut custom_cmd) => {
             custom_cmd.push(path);
             run(custom_cmd)?;
         }
+
+        PreviewType::ShowImage => {
+            let window = show_image::create_window("image", Default::default())
+                .with_whatever_context(|_| "Could not create window for preview")?;
+            window
+                .set_image("image-001", preview_image)
+                .with_whatever_context(|_| "Could not set image")?;
+            for event in window
+                .event_channel()
+                .with_whatever_context(|_| "Could not handle window channel")?
+            {
+                match event {
+                    // show_image::event::WindowEvent::RedrawRequested(_) => todo!(),
+                    // show_image::event::WindowEvent::Resized(_) => todo!(),
+                    // show_image::event::WindowEvent::Moved(_) => todo!(),
+                    // show_image::event::WindowEvent::CloseRequested(_) => todo!(),
+                    // show_image::event::WindowEvent::Destroyed(_) => todo!(),
+                    // show_image::event::WindowEvent::DroppedFile(_) => todo!(),
+                    // show_image::event::WindowEvent::HoveredFile(_) => todo!(),
+                    // show_image::event::WindowEvent::HoveredFileCancelled(_) => todo!(),
+                    // show_image::event::WindowEvent::FocusGained(_) => todo!(),
+                    // show_image::event::WindowEvent::FocusLost(_) => todo!(),
+                    show_image::event::WindowEvent::KeyboardInput(input) => match input {
+                        WindowKeyboardInputEvent { input, .. } => match input {
+                            show_image::event::KeyboardInput { key_code, .. } => {
+                                match key_code {
+                                    Some(show_image::event::VirtualKeyCode::Q) => {
+                                        exit(0);
+                                    }
+                                    _ => {}
+                                }
+                                dbg!(input);
+                            }
+                        },
+                        _ => {}
+                    },
+                    // show_image::event::WindowEvent::TextInput(_) => todo!(),
+                    // show_image::event::WindowEvent::MouseEnter(_) => todo!(),
+                    // show_image::event::WindowEvent::MouseLeave(_) => todo!(),
+                    // show_image::event::WindowEvent::MouseMove(_) => todo!(),
+                    // show_image::event::WindowEvent::MouseButton(_) => todo!(),
+                    // show_image::event::WindowEvent::MouseWheel(_) => todo!(),
+                    // show_image::event::WindowEvent::AxisMotion(_) => todo!(),
+                    // show_image::event::WindowEvent::TouchpadPressure(_) => todo!(),
+                    // show_image::event::WindowEvent::Touch(_) => todo!(),
+                    // show_image::event::WindowEvent::ScaleFactorChanged(_) => todo!(),
+                    // show_image::event::WindowEvent::ThemeChanged(_) => todo!(),
+                    _ => {}
+                }
+            }
+        }
+
         PreviewType::Gio => {
             run(vec!["gio".to_string(), "open".to_string(), path])?;
         }
@@ -255,9 +316,10 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
 
 #[snafu::report]
 #[tokio::main]
+#[show_image::main]
 async fn main() -> Result<(), Whatever> {
     env_logger::init_from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
+        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn,naga=off"),
     );
 
     let args = Arguments::parse();

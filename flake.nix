@@ -31,7 +31,7 @@
         # For `nix develop`:
         devShell = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [ rustc cargo ] ++ baseInputs;
-          PKG_CONFIG_PATH = "${pkgs.systemd.dev}/lib/pkgconfig:${pkgs.bluez.dev}/lib/pkgconfig${pkgs.fontconfig.dev}/lib/pkgconfig";
+          PKG_CONFIG_PATH = "${pkgs.systemd.dev}/lib/pkgconfig:${pkgs.bluez.dev}/lib/pkgconfig${pkgs.fontconfig.dev}/lib/pkgconfig:${pkgs.freetype.dev}/lib/pkgconfig";
         };
       }
     );
