@@ -2,8 +2,8 @@ use std::io;
 use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
 use advmac::MacAddr6;
-use image::{DynamicImage, ImageBuffer, Rgba};
-use log::{trace, warn};
+use image::{DynamicImage, ImageBuffer, Rgb};
+use log::trace;
 use rusttype::{Font, Scale};
 
 use dimensions::*;
@@ -24,20 +24,20 @@ pub const INIT_BASE_FLAT: &[u8] = &[
 
 pub const IMG_PRECURSOR: &[u8] = &[31, 17, 36, 0, 27, 64, 29, 118, 48, 0, 12, 0, 64, 1]; // 1f1124001b401d7630000c004001
 
-const COLOR_BLACK: image::Rgba<u8> = image::Rgba([255u8, 255u8, 255u8, 255u8]);
+const COLOR_BLACK: image::Rgb<u8> = image::Rgb([255u8, 255u8, 255u8]);
+// const COLOR_BLACK: image::Rgba<u8> = image::Rgba([255u8, 255u8, 255u8, 255u8]);
 
-pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whatever> {
+pub fn generate_image_simple(text: &str, scale: Scale) -> Result<DynamicImage, Whatever> {
     let dim = Dimensions::new(320, 96);
     trace!("{:#?}", &dim);
     let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
     let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
-    let scale = Scale::uniform(font_scale);
 
     let actual_size: Dimensions = imageproc::drawing::text_size(scale, &font, &text).into();
 
     let txt_pos = (actual_size - dim) / -2.;
 
-    let mut canvas: ImageBuffer<Rgba<u8>, _> =
+    let mut canvas: ImageBuffer<Rgb<u8>, _> =
         ImageBuffer::new(dim.width() as u32, dim.height() as u32);
 
     imageproc::drawing::draw_text_mut(
@@ -50,9 +50,37 @@ pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whate
         text,
     );
 
-    let canvas = DynamicImage::from(canvas).rotate270();
+    Ok(DynamicImage::from(canvas).rotate270())
+}
 
-    Ok(canvas)
+pub fn generate_image_headed(
+    header: &str,
+    text: &str,
+    scale: Scale,
+) -> Result<DynamicImage, Whatever> {
+    let dim = Dimensions::new(320, 96);
+    trace!("{:#?}", &dim);
+    let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
+    let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
+
+    let actual_size: Dimensions = imageproc::drawing::text_size(scale, &font, &header).into();
+
+    let txt_pos = (actual_size - dim) / -2.;
+
+    let mut canvas: ImageBuffer<Rgb<u8>, _> =
+        ImageBuffer::new(dim.width() as u32, dim.height() as u32);
+
+    imageproc::drawing::draw_text_mut(
+        &mut canvas,
+        COLOR_BLACK,
+        txt_pos.x as i32,
+        txt_pos.y as i32,
+        scale,
+        &font,
+        header,
+    );
+
+    Ok(DynamicImage::from(canvas).rotate270())
 }
 
 pub fn pack_image(image: &DynamicImage) -> Vec<u8> {
@@ -184,17 +212,9 @@ mod printer_addr_serde {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct D30Config {
-    #[serde(with = "printer_addr_serde")]
-    pub default: PrinterAddr,
+    // #[serde(with = "printer_addr_serde")]
+    pub default: Option<PrinterAddr>,
     pub resolution: IndexMap<String, MacAddr6>,
-}
-
-#[derive(Debug, Snafu)]
-pub enum LoadTomlError {
-    #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
-    CouldNotReadFile { source: io::Error },
-    #[snafu(display("Failed to serialize TOML D30 config"))]
-    CouldNotParse { source: toml::de::Error },
 }
 
 #[derive(Debug, Snafu)]
@@ -203,13 +223,15 @@ pub enum ReadD30ConfigError {
     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
     #[snafu(display("Could not place config file"))]
     CouldNotPlaceConfigFile { source: io::Error },
-    #[snafu(display("Could not load TOML"))]
-    CouldNotLoadToml { source: LoadTomlError },
+    #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
+    CouldNotReadFile { source: io::Error },
+    #[snafu(display("Failed to serialize TOML D30 config"))]
+    CouldNotParse { source: toml::de::Error },
 }
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
 impl D30Config {
-    pub fn load_toml(path: &PathBuf) -> Result<Self, LoadTomlError> {
+    pub fn load_toml(path: &PathBuf) -> Result<Self, ReadD30ConfigError> {
         let contents = fs::read_to_string(path).context(CouldNotReadFileSnafu)?;
         Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
@@ -220,11 +242,8 @@ impl D30Config {
         let config_path = phomemo_lib_path
             .place_config_file("phomemo-config.toml")
             .context(CouldNotPlaceConfigFileSnafu)?;
-        let toml = D30Config::load_toml(&config_path);
-        if let Err(e) = &toml {
-            warn!("Failed to parse config file: {:#?}", e);
-        }
-        Ok(toml.context(CouldNotLoadTomlSnafu)?)
+        let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
+        Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
 
     pub fn resolve_addr(&self, printer_addr: &PrinterAddr) -> Result<MacAddr6, Whatever> {
@@ -243,6 +262,10 @@ impl D30Config {
     }
 
     pub fn resolve_default(&self) -> Result<MacAddr6, Whatever> {
-        self.resolve_addr(&self.default)
+        let default = self
+            .default
+            .clone()
+            .with_whatever_context(|| "No default is set")?;
+        self.resolve_addr(&default)
     }
 }
