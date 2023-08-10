@@ -3,7 +3,6 @@
 // TODO: Figure out how to handle non-precut labels
 // TODO: Figure out how to handle 'fruit' labels
 // TODO: Implement templates with fixed font sizes and positions
-// TODO: Implement preview feature
 // TODO: Implement 'arbitrary image' feature
 
 use std::{
