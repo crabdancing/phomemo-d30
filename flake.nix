@@ -19,7 +19,7 @@
         mkCliBuild = pname: naersk'.buildPackage {
           inherit pname;
           src = ./.; # Adjust the source path according to your workspace layout
-          nativeBuildInputs = with pkgs; [ pkg-config ];
+          nativeBuildInputs = with pkgs; [ pkg-config cmake ];
           buildInputs = baseInputs;
           cargoBuildOptions = opts: opts ++ [ "--package" pname ];
         };
