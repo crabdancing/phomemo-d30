@@ -163,7 +163,7 @@ fn cmd_show_preview(
             window
                 .set_image("image-001", preview_image)
                 .with_whatever_context(|_| "Could not set image")?;
-            for event in window
+            'event_loop: for event in window
                 .event_channel()
                 .with_whatever_context(|_| "Could not handle window channel")?
             {
@@ -183,7 +183,7 @@ fn cmd_show_preview(
                             show_image::event::KeyboardInput { key_code, .. } => {
                                 match key_code {
                                     Some(show_image::event::VirtualKeyCode::Q) => {
-                                        exit(0);
+                                        break 'event_loop;
                                     }
                                     _ => {}
                                 }
