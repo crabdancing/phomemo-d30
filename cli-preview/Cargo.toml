@@ -1,5 +1,5 @@
 [package]
-name = "cli-preview"
+name = "d30-cli-preview"
 version = "0.1.0"
 edition = "2021"
 

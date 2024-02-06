@@ -8,7 +8,8 @@
 use std::{
     fs,
     io::{self, Cursor, Write},
-    process::Stdio,
+    path::PathBuf,
+    process::{Command, Stdio},
     thread,
 };
 
@@ -16,11 +17,10 @@ use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
 use d30::{D30Scale, PrinterAddr};
-use image::DynamicImage;
-use log::debug;
+use image::{DynamicImage, ImageFormat};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
-use show_image::event::{WindowKeyboardInputEvent, WindowMouseButtonEvent};
-use snafu::{whatever, ResultExt, Snafu, Whatever};
+use snafu::{whatever, OptionExt, ResultExt, Snafu, Whatever};
 
 #[derive(Debug, Parser)]
 #[command(name = "d30")]
@@ -142,67 +142,112 @@ enum Accepted {
 
 fn backend_show_image(preview_image: DynamicImage) -> Result<Accepted, Whatever> {
     let mut accepted = Accepted::Unknown;
-    let window = show_image::create_window("image", Default::default())
-        .with_whatever_context(|_| "Could not create window for preview")?;
-    window
-        .set_image("image-001", preview_image)
-        .with_whatever_context(|_| "Could not set image")?;
-    'event_loop: for event in window
-        .event_channel()
-        .with_whatever_context(|_| "Could not handle window channel")?
-    {
-        match event {
-            // show_image::event::WindowEvent::RedrawRequested(_) => todo!(),
-            // show_image::event::WindowEvent::Resized(_) => todo!(),
-            // show_image::event::WindowEvent::Moved(_) => todo!(),
-            show_image::event::WindowEvent::CloseRequested(_) => {
-                accepted = Accepted::Unknown;
-                break 'event_loop;
+
+    let possible_child_targets: Vec<PathBuf> = vec![
+        std::env::current_exe()
+            .with_whatever_context(|_| "Could not get current exe!")?
+            .parent()
+            .with_whatever_context(|| "Could not get parent of current exe")?
+            .join("d30-cli-preview"),
+        "d30-cli-preview".into(),
+    ];
+    for target in possible_child_targets {
+        match Command::new(target).stdin(Stdio::piped()).spawn() {
+            Ok(mut child) => {
+                let mut stdin = child
+                    .stdin
+                    .take()
+                    .with_whatever_context(|| "Failed to take child stdin")?;
+                let mut bytes = Cursor::new(Vec::new());
+                preview_image
+                    .write_to(&mut bytes, ImageFormat::Png)
+                    .with_whatever_context(|_| "Failed to write to buffer")?;
+
+                stdin
+                    .write_all(&bytes.into_inner())
+                    .with_whatever_context(|_| "Failed to write to child stdin")?;
+                drop(stdin);
+                return Ok(
+                    match child
+                        .wait()
+                        .with_whatever_context(|_| "Could not get child status")?
+                        .code()
+                        .unwrap_or(1)
+                    {
+                        0 => Accepted::Yes,
+                        46 => Accepted::No,
+                        _ => Accepted::Unknown,
+                    },
+                );
             }
-            show_image::event::WindowEvent::Destroyed(_) => {
-                accepted = Accepted::Unknown;
-                break 'event_loop;
+            Err(e) => {
+                info!("Could not find: {}", e);
+                continue;
             }
-            // show_image::event::WindowEvent::DroppedFile(_) => todo!(),
-            // show_image::event::WindowEvent::HoveredFile(_) => todo!(),
-            // show_image::event::WindowEvent::HoveredFileCancelled(_) => todo!(),
-            // show_image::event::WindowEvent::FocusGained(_) => todo!(),
-            show_image::event::WindowEvent::FocusLost(_) => {
-                accepted = Accepted::Unknown;
-                break 'event_loop;
-            }
-            show_image::event::WindowEvent::KeyboardInput(input) => match input {
-                WindowKeyboardInputEvent { input, .. } => match input {
-                    show_image::event::KeyboardInput { key_code, .. } => {
-                        match key_code {
-                            Some(show_image::event::VirtualKeyCode::Y) => {
-                                accepted = Accepted::Yes;
-                                break 'event_loop;
-                            }
-                            Some(show_image::event::VirtualKeyCode::N) => {
-                                accepted = Accepted::No;
-                                break 'event_loop;
-                            }
-                            _ => {}
-                        }
-                        dbg!(input);
-                    }
-                },
-            },
-            // show_image::event::WindowEvent::TextInput(_) => todo!(),
-            // show_image::event::WindowEvent::MouseEnter(_) => todo!(),
-            // show_image::event::WindowEvent::MouseLeave(_) => todo!(),
-            // show_image::event::WindowEvent::MouseMove(_) => todo!(),
-            // show_image::event::WindowEvent::MouseButton(_) => todo!(),
-            // show_image::event::WindowEvent::MouseWheel(_) => todo!(),
-            // show_image::event::WindowEvent::AxisMotion(_) => todo!(),
-            // show_image::event::WindowEvent::TouchpadPressure(_) => todo!(),
-            // show_image::event::WindowEvent::Touch(_) => todo!(),
-            // show_image::event::WindowEvent::ScaleFactorChanged(_) => todo!(),
-            // show_image::event::WindowEvent::ThemeChanged(_) => todo!(),
-            _ => {}
         }
     }
+
+    // let window = show_image::create_window("image", Default::default())
+    //     .with_whatever_context(|_| "Could not create window for preview")?;
+    // window
+    //     .set_image("image-001", preview_image)
+    //     .with_whatever_context(|_| "Could not set image")?;
+    // 'event_loop: for event in window
+    //     .event_channel()
+    //     .with_whatever_context(|_| "Could not handle window channel")?
+    // {
+    //     match event {
+    //         // show_image::event::WindowEvent::RedrawRequested(_) => todo!(),
+    //         // show_image::event::WindowEvent::Resized(_) => todo!(),
+    //         // show_image::event::WindowEvent::Moved(_) => todo!(),
+    //         show_image::event::WindowEvent::CloseRequested(_) => {
+    //             accepted = Accepted::Unknown;
+    //             break 'event_loop;
+    //         }
+    //         show_image::event::WindowEvent::Destroyed(_) => {
+    //             accepted = Accepted::Unknown;
+    //             break 'event_loop;
+    //         }
+    //         // show_image::event::WindowEvent::DroppedFile(_) => todo!(),
+    //         // show_image::event::WindowEvent::HoveredFile(_) => todo!(),
+    //         // show_image::event::WindowEvent::HoveredFileCancelled(_) => todo!(),
+    //         // show_image::event::WindowEvent::FocusGained(_) => todo!(),
+    //         show_image::event::WindowEvent::FocusLost(_) => {
+    //             accepted = Accepted::Unknown;
+    //             break 'event_loop;
+    //         }
+    //         show_image::event::WindowEvent::KeyboardInput(input) => match input {
+    //             WindowKeyboardInputEvent { input, .. } => match input {
+    //                 show_image::event::KeyboardInput { key_code, .. } => {
+    //                     match key_code {
+    //                         Some(show_image::event::VirtualKeyCode::Y) => {
+    //                             accepted = Accepted::Yes;
+    //                             break 'event_loop;
+    //                         }
+    //                         Some(show_image::event::VirtualKeyCode::N) => {
+    //                             accepted = Accepted::No;
+    //                             break 'event_loop;
+    //                         }
+    //                         _ => {}
+    //                     }
+    //                     dbg!(input);
+    //                 }
+    //             },
+    //         },
+    //         // show_image::event::WindowEvent::TextInput(_) => todo!(),
+    //         // show_image::event::WindowEvent::MouseEnter(_) => todo!(),
+    //         // show_image::event::WindowEvent::MouseLeave(_) => todo!(),
+    //         // show_image::event::WindowEvent::MouseMove(_) => todo!(),
+    //         // show_image::event::WindowEvent::MouseButton(_) => todo!(),
+    //         // show_image::event::WindowEvent::MouseWheel(_) => todo!(),
+    //         // show_image::event::WindowEvent::AxisMotion(_) => todo!(),
+    //         // show_image::event::WindowEvent::TouchpadPressure(_) => todo!(),
+    //         // show_image::event::WindowEvent::Touch(_) => todo!(),
+    //         // show_image::event::WindowEvent::ScaleFactorChanged(_) => todo!(),
+    //         // show_image::event::WindowEvent::ThemeChanged(_) => todo!(),
+    //         _ => {}
+    //     }
+    // }
     Ok(Accepted::Unknown)
 }
 fn cmd_show_preview(

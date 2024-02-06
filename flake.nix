@@ -22,7 +22,7 @@
         };
 
         naersk' = pkgs.callPackage naersk {};
-
+        
         mkCliBuild = pname: naersk'.buildPackage (lib.recursiveUpdate commonEnvironment {
           inherit pname;
           src = ./.; # Adjust the source path according to your workspace layout
@@ -30,7 +30,7 @@
           buildInputs = buildInputs;
           cargoBuildOptions = opts: opts ++ [ "--package" pname ];
           postInstall = ''
-            wrapProgram "$out/bin/d30-cli" \
+            wrapProgram "$out/bin/${pname}" \
               --prefix LD_LIBRARY_PATH : "${LD_LIBRARY_PATH}"
           '';
         });
@@ -38,6 +38,7 @@
       in {
         defaultPackage = mkCliBuild "d30-cli";
         d30-cli = mkCliBuild "d30-cli";
+        d30-cli-preview = mkCliBuild "d30-cli-preview";
 
         devShell = pkgs.mkShell (lib.recursiveUpdate commonEnvironment {
           inherit LD_LIBRARY_PATH;
