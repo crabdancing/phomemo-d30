@@ -126,10 +126,16 @@ fn wezterm_imgcat(target: impl AsRef<str>) -> Result<(), Whatever> {
     Ok(())
 }
 
+enum Accepted {
+    Yes,
+    No,
+    Unknown,
+}
+
 fn cmd_show_preview(
     preview: Option<PreviewType>,
     mut preview_image: DynamicImage,
-) -> Result<(), Whatever> {
+) -> Result<Accepted, Whatever> {
     let preview = preview.unwrap_or(PreviewType::Gio);
     let preview_image_file =
         temp_file::TempFile::new().with_whatever_context(|_| "Failed to make temporary file")?;
@@ -151,17 +157,20 @@ fn cmd_show_preview(
 
     debug!("Preview type: {:?}", preview);
 
-    match preview {
+    Ok(match preview {
         PreviewType::Wezterm => {
             wezterm_imgcat(&path)?;
+            Accepted::Unknown
         }
 
         PreviewType::CustomCommand(mut custom_cmd) => {
             custom_cmd.push(path);
             run(custom_cmd)?;
+            Accepted::Unknown
         }
 
         PreviewType::ShowImage => {
+            let mut accepted = Accepted::Unknown;
             let window = show_image::create_window("image", Default::default())
                 .with_whatever_context(|_| "Could not create window for preview")?;
             window
@@ -175,18 +184,32 @@ fn cmd_show_preview(
                     // show_image::event::WindowEvent::RedrawRequested(_) => todo!(),
                     // show_image::event::WindowEvent::Resized(_) => todo!(),
                     // show_image::event::WindowEvent::Moved(_) => todo!(),
-                    // show_image::event::WindowEvent::CloseRequested(_) => todo!(),
-                    // show_image::event::WindowEvent::Destroyed(_) => todo!(),
+                    show_image::event::WindowEvent::CloseRequested(_) => {
+                        accepted = Accepted::Unknown;
+                        break 'event_loop;
+                    }
+                    show_image::event::WindowEvent::Destroyed(_) => {
+                        accepted = Accepted::Unknown;
+                        break 'event_loop;
+                    }
                     // show_image::event::WindowEvent::DroppedFile(_) => todo!(),
                     // show_image::event::WindowEvent::HoveredFile(_) => todo!(),
                     // show_image::event::WindowEvent::HoveredFileCancelled(_) => todo!(),
                     // show_image::event::WindowEvent::FocusGained(_) => todo!(),
-                    // show_image::event::WindowEvent::FocusLost(_) => todo!(),
+                    show_image::event::WindowEvent::FocusLost(_) => {
+                        accepted = Accepted::Unknown;
+                        break 'event_loop;
+                    }
                     show_image::event::WindowEvent::KeyboardInput(input) => match input {
                         WindowKeyboardInputEvent { input, .. } => match input {
                             show_image::event::KeyboardInput { key_code, .. } => {
                                 match key_code {
-                                    Some(show_image::event::VirtualKeyCode::Q) => {
+                                    Some(show_image::event::VirtualKeyCode::Y) => {
+                                        accepted = Accepted::Yes;
+                                        break 'event_loop;
+                                    }
+                                    Some(show_image::event::VirtualKeyCode::N) => {
+                                        accepted = Accepted::No;
                                         break 'event_loop;
                                     }
                                     _ => {}
@@ -210,13 +233,14 @@ fn cmd_show_preview(
                     _ => {}
                 }
             }
+            accepted
         }
 
         PreviewType::Gio => {
             run(vec!["gio".to_string(), "open".to_string(), path])?;
+            Accepted::Unknown
         }
-    }
-    Ok(())
+    })
 }
 
 fn get_addr(
@@ -276,12 +300,15 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
     let mut preview_image = image.rotate90();
     preview_image.invert();
     if show_preview {
-        cmd_show_preview(config.preview.clone(), preview_image)?;
-        let should_accept = inquire::Confirm::new("Displaying preview. Accept this print?")
-            .with_default(false)
-            .prompt_skippable()
-            .with_whatever_context(|_| "Failed to ask user whether to accept")?
-            .unwrap_or(false);
+        let should_accept = match cmd_show_preview(config.preview.clone(), preview_image)? {
+            Accepted::Yes => true,
+            Accepted::No => false,
+            Accepted::Unknown => inquire::Confirm::new("Displaying preview. Accept this print?")
+                .with_default(false)
+                .prompt_skippable()
+                .with_whatever_context(|_| "Failed to ask user whether to accept")?
+                .unwrap_or(false),
+        };
         if !should_accept {
             println!("Goodbye UwU");
             return Ok(());
