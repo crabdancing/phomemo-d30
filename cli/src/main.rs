@@ -225,16 +225,7 @@ fn cmd_show_preview(
             Accepted::Unknown
         }
 
-        PreviewType::ShowImage => {
-            // fn main_ctx() {}
-            // thread::spawn(|| {
-            //     show
-            // });
-
-            // show_image::run_context(main_ctx);
-            //          accepted
-            backend_show_image(preview_image)?
-        }
+        PreviewType::ShowImage => backend_show_image(preview_image)?,
 
         PreviewType::Gio => {
             run(vec!["gio".to_string(), "open".to_string(), path])?;
