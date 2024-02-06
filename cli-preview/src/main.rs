@@ -24,8 +24,6 @@ fn main() -> Result<(), Whatever> {
     let mut buffer = Vec::new();
     reader.read_to_end(&mut buffer);
 
-    // println!("Read bytes: {:?}", buffer);
-
     let preview_image = image::load_from_memory_with_format(&buffer, image::ImageFormat::Png)
         .expect("Failed to load");
 
@@ -39,9 +37,6 @@ fn main() -> Result<(), Whatever> {
         .with_whatever_context(|_| "Could not handle window channel")?
     {
         match event {
-            // show_image::event::WindowEvent::RedrawRequested(_) => todo!(),
-            // show_image::event::WindowEvent::Resized(_) => todo!(),
-            // show_image::event::WindowEvent::Moved(_) => todo!(),
             show_image::event::WindowEvent::CloseRequested(_) => {
                 accepted = Accepted::Unknown;
                 break 'event_loop;
@@ -50,49 +45,31 @@ fn main() -> Result<(), Whatever> {
                 accepted = Accepted::Unknown;
                 break 'event_loop;
             }
-            // show_image::event::WindowEvent::DroppedFile(_) => todo!(),
-            // show_image::event::WindowEvent::HoveredFile(_) => todo!(),
-            // show_image::event::WindowEvent::HoveredFileCancelled(_) => todo!(),
-            // show_image::event::WindowEvent::FocusGained(_) => todo!(),
-            show_image::event::WindowEvent::FocusLost(_) => {
-                accepted = Accepted::Unknown;
-                break 'event_loop;
-            }
+            // show_image::event::WindowEvent::FocusLost(_) => {
+            //     accepted = Accepted::Unknown;
+            //     break 'event_loop;
+            // }
             show_image::event::WindowEvent::KeyboardInput(input) => match input {
                 WindowKeyboardInputEvent { input, .. } => match input {
-                    show_image::event::KeyboardInput { key_code, .. } => {
-                        match key_code {
-                            Some(show_image::event::VirtualKeyCode::Y) => {
-                                accepted = Accepted::Yes;
-                                break 'event_loop;
-                            }
-                            Some(show_image::event::VirtualKeyCode::N) => {
-                                accepted = Accepted::No;
-                                break 'event_loop;
-                            }
-                            Some(VirtualKeyCode::Q) => {
-                                break 'event_loop;
-                            }
-                            Some(VirtualKeyCode::Escape) => {
-                                break 'event_loop;
-                            }
-                            _ => {}
+                    show_image::event::KeyboardInput { key_code, .. } => match key_code {
+                        Some(show_image::event::VirtualKeyCode::Y) => {
+                            accepted = Accepted::Yes;
+                            break 'event_loop;
                         }
-                        dbg!(input);
-                    }
+                        Some(show_image::event::VirtualKeyCode::N) => {
+                            accepted = Accepted::No;
+                            break 'event_loop;
+                        }
+                        Some(VirtualKeyCode::Q) => {
+                            break 'event_loop;
+                        }
+                        Some(VirtualKeyCode::Escape) => {
+                            break 'event_loop;
+                        }
+                        _ => {}
+                    },
                 },
             },
-            // show_image::event::WindowEvent::TextInput(_) => todo!(),
-            // show_image::event::WindowEvent::MouseEnter(_) => todo!(),
-            // show_image::event::WindowEvent::MouseLeave(_) => todo!(),
-            // show_image::event::WindowEvent::MouseMove(_) => todo!(),
-            // show_image::event::WindowEvent::MouseButton(_) => todo!(),
-            // show_image::event::WindowEvent::MouseWheel(_) => todo!(),
-            // show_image::event::WindowEvent::AxisMotion(_) => todo!(),
-            // show_image::event::WindowEvent::TouchpadPressure(_) => todo!(),
-            // show_image::event::WindowEvent::Touch(_) => todo!(),
-            // show_image::event::WindowEvent::ScaleFactorChanged(_) => todo!(),
-            // show_image::event::WindowEvent::ThemeChanged(_) => todo!(),
             _ => {}
         }
     }
