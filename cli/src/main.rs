@@ -8,8 +8,8 @@
 use std::{
     fs,
     io::{self, Write},
-    process::{exit, Stdio},
-    str::FromStr,
+    process::Stdio,
+    thread,
 };
 
 use advmac::MacAddr6;
@@ -19,7 +19,7 @@ use d30::{D30Scale, PrinterAddr};
 use image::DynamicImage;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use show_image::{event::WindowKeyboardInputEvent, winit::event::KeyboardInput};
+use show_image::event::WindowKeyboardInputEvent;
 use snafu::{whatever, ResultExt, Snafu, Whatever};
 
 #[derive(Debug, Parser)]
@@ -52,6 +52,9 @@ struct ArgsPrintText {
     margins: f32,
     #[arg(short, long)]
     preview: bool,
+    #[arg(short, long)]
+    #[arg(default_value = "1")]
+    number_of_images: i32,
 }
 
 // ---------------------
@@ -132,9 +135,74 @@ enum Accepted {
     Unknown,
 }
 
+fn backend_show_image(preview_image: DynamicImage) -> Result<Accepted, Whatever> {
+    let mut accepted = Accepted::Unknown;
+    let window = show_image::create_window("image", Default::default())
+        .with_whatever_context(|_| "Could not create window for preview")?;
+    window
+        .set_image("image-001", preview_image)
+        .with_whatever_context(|_| "Could not set image")?;
+    'event_loop: for event in window
+        .event_channel()
+        .with_whatever_context(|_| "Could not handle window channel")?
+    {
+        match event {
+            // show_image::event::WindowEvent::RedrawRequested(_) => todo!(),
+            // show_image::event::WindowEvent::Resized(_) => todo!(),
+            // show_image::event::WindowEvent::Moved(_) => todo!(),
+            show_image::event::WindowEvent::CloseRequested(_) => {
+                accepted = Accepted::Unknown;
+                break 'event_loop;
+            }
+            show_image::event::WindowEvent::Destroyed(_) => {
+                accepted = Accepted::Unknown;
+                break 'event_loop;
+            }
+            // show_image::event::WindowEvent::DroppedFile(_) => todo!(),
+            // show_image::event::WindowEvent::HoveredFile(_) => todo!(),
+            // show_image::event::WindowEvent::HoveredFileCancelled(_) => todo!(),
+            // show_image::event::WindowEvent::FocusGained(_) => todo!(),
+            show_image::event::WindowEvent::FocusLost(_) => {
+                accepted = Accepted::Unknown;
+                break 'event_loop;
+            }
+            show_image::event::WindowEvent::KeyboardInput(input) => match input {
+                WindowKeyboardInputEvent { input, .. } => match input {
+                    show_image::event::KeyboardInput { key_code, .. } => {
+                        match key_code {
+                            Some(show_image::event::VirtualKeyCode::Y) => {
+                                accepted = Accepted::Yes;
+                                break 'event_loop;
+                            }
+                            Some(show_image::event::VirtualKeyCode::N) => {
+                                accepted = Accepted::No;
+                                break 'event_loop;
+                            }
+                            _ => {}
+                        }
+                        dbg!(input);
+                    }
+                },
+            },
+            // show_image::event::WindowEvent::TextInput(_) => todo!(),
+            // show_image::event::WindowEvent::MouseEnter(_) => todo!(),
+            // show_image::event::WindowEvent::MouseLeave(_) => todo!(),
+            // show_image::event::WindowEvent::MouseMove(_) => todo!(),
+            // show_image::event::WindowEvent::MouseButton(_) => todo!(),
+            // show_image::event::WindowEvent::MouseWheel(_) => todo!(),
+            // show_image::event::WindowEvent::AxisMotion(_) => todo!(),
+            // show_image::event::WindowEvent::TouchpadPressure(_) => todo!(),
+            // show_image::event::WindowEvent::Touch(_) => todo!(),
+            // show_image::event::WindowEvent::ScaleFactorChanged(_) => todo!(),
+            // show_image::event::WindowEvent::ThemeChanged(_) => todo!(),
+            _ => {}
+        }
+    }
+    Ok(Accepted::Unknown)
+}
 fn cmd_show_preview(
     preview: Option<PreviewType>,
-    mut preview_image: DynamicImage,
+    preview_image: DynamicImage,
 ) -> Result<Accepted, Whatever> {
     let preview = preview.unwrap_or(PreviewType::Gio);
     let preview_image_file =
@@ -170,70 +238,14 @@ fn cmd_show_preview(
         }
 
         PreviewType::ShowImage => {
-            let mut accepted = Accepted::Unknown;
-            let window = show_image::create_window("image", Default::default())
-                .with_whatever_context(|_| "Could not create window for preview")?;
-            window
-                .set_image("image-001", preview_image)
-                .with_whatever_context(|_| "Could not set image")?;
-            'event_loop: for event in window
-                .event_channel()
-                .with_whatever_context(|_| "Could not handle window channel")?
-            {
-                match event {
-                    // show_image::event::WindowEvent::RedrawRequested(_) => todo!(),
-                    // show_image::event::WindowEvent::Resized(_) => todo!(),
-                    // show_image::event::WindowEvent::Moved(_) => todo!(),
-                    show_image::event::WindowEvent::CloseRequested(_) => {
-                        accepted = Accepted::Unknown;
-                        break 'event_loop;
-                    }
-                    show_image::event::WindowEvent::Destroyed(_) => {
-                        accepted = Accepted::Unknown;
-                        break 'event_loop;
-                    }
-                    // show_image::event::WindowEvent::DroppedFile(_) => todo!(),
-                    // show_image::event::WindowEvent::HoveredFile(_) => todo!(),
-                    // show_image::event::WindowEvent::HoveredFileCancelled(_) => todo!(),
-                    // show_image::event::WindowEvent::FocusGained(_) => todo!(),
-                    show_image::event::WindowEvent::FocusLost(_) => {
-                        accepted = Accepted::Unknown;
-                        break 'event_loop;
-                    }
-                    show_image::event::WindowEvent::KeyboardInput(input) => match input {
-                        WindowKeyboardInputEvent { input, .. } => match input {
-                            show_image::event::KeyboardInput { key_code, .. } => {
-                                match key_code {
-                                    Some(show_image::event::VirtualKeyCode::Y) => {
-                                        accepted = Accepted::Yes;
-                                        break 'event_loop;
-                                    }
-                                    Some(show_image::event::VirtualKeyCode::N) => {
-                                        accepted = Accepted::No;
-                                        break 'event_loop;
-                                    }
-                                    _ => {}
-                                }
-                                dbg!(input);
-                            }
-                        },
-                        _ => {}
-                    },
-                    // show_image::event::WindowEvent::TextInput(_) => todo!(),
-                    // show_image::event::WindowEvent::MouseEnter(_) => todo!(),
-                    // show_image::event::WindowEvent::MouseLeave(_) => todo!(),
-                    // show_image::event::WindowEvent::MouseMove(_) => todo!(),
-                    // show_image::event::WindowEvent::MouseButton(_) => todo!(),
-                    // show_image::event::WindowEvent::MouseWheel(_) => todo!(),
-                    // show_image::event::WindowEvent::AxisMotion(_) => todo!(),
-                    // show_image::event::WindowEvent::TouchpadPressure(_) => todo!(),
-                    // show_image::event::WindowEvent::Touch(_) => todo!(),
-                    // show_image::event::WindowEvent::ScaleFactorChanged(_) => todo!(),
-                    // show_image::event::WindowEvent::ThemeChanged(_) => todo!(),
-                    _ => {}
-                }
-            }
-            accepted
+            // fn main_ctx() {}
+            // thread::spawn(|| {
+            //     show
+            // });
+
+            // show_image::run_context(main_ctx);
+            //          accepted
+            backend_show_image(preview_image)?
         }
 
         PreviewType::Gio => {
@@ -303,7 +315,7 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
         let should_accept = match cmd_show_preview(config.preview.clone(), preview_image)? {
             Accepted::Yes => true,
             Accepted::No => false,
-            Accepted::Unknown => inquire::Confirm::new("Displaying preview. Accept this print?")
+            Accepted::Unknown => inquire::Confirm::new("Displayed preview. Accept this print?")
                 .with_default(false)
                 .prompt_skippable()
                 .with_whatever_context(|_| "Failed to ask user whether to accept")?
@@ -334,17 +346,19 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
     if !dry_run {
         output.extend(d30::pack_image(&image));
     }
-    debug!("Write output to socket");
-    if !dry_run {
-        socket
-            .write(output.as_slice())
-            .with_whatever_context(|_| "Failed to write to socket")?;
-    }
-    debug!("Flush socket");
-    if !dry_run {
-        socket
-            .flush()
-            .with_whatever_context(|_| "Failed to flush socket")?;
+    for _ in 0..args.number_of_images {
+        debug!("Write output to socket");
+        if !dry_run {
+            socket
+                .write(output.as_slice())
+                .with_whatever_context(|_| "Failed to write to socket")?;
+        }
+        debug!("Flush socket");
+        if !dry_run {
+            socket
+                .flush()
+                .with_whatever_context(|_| "Failed to flush socket")?;
+        }
     }
     Ok(())
 }
@@ -383,5 +397,6 @@ async fn main() -> Result<(), Whatever> {
             debug!("Could not place config file: {}", source);
         }
     }
+
     Ok(())
 }
