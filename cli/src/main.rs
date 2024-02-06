@@ -1,5 +1,3 @@
-// TODO: Figure out what's required for batch printing (e.g.,
-// can I just send the precursor bytes once, and then send multiple packed images?
 // TODO: Figure out how to handle non-precut labels
 // TODO: Figure out how to handle 'fruit' labels
 // TODO: Implement templates with fixed font sizes and positions

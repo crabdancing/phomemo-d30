@@ -13,40 +13,43 @@
         };
 
         lib = pkgs.lib;
-        guiInputs = with pkgs; with pkgs.xorg; [ libX11 libXcursor libXrandr libXi vulkan-loader libxkbcommon wayland ];
-        buildInputs = with pkgs; [ pkg-config systemd bluez fontconfig ];
-        LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ guiInputs);
-
-        commonEnvironment = {
-          inherit buildInputs;
-        };
+        guiInputs = with pkgs; with pkgs.xorg; [ libX11 libXcursor libXrandr libXi vulkan-loader libxkbcommon wayland fontconfig ];
+        backendInputs = with pkgs; [ systemd bluez ];
+        commonBuildInputs = with pkgs; [ pkg-config ];
 
         naersk' = pkgs.callPackage naersk {};
         
-        mkCliBuild = pname: naersk'.buildPackage (lib.recursiveUpdate commonEnvironment {
-          inherit pname;
-          src = ./.; # Adjust the source path according to your workspace layout
+        d30-cli = naersk'.buildPackage rec {
+          pname = "d30-cli";
+          src = ./.;
           nativeBuildInputs = with pkgs; [ pkg-config cmake makeWrapper ];
-          buildInputs = buildInputs;
+          buildInputs = commonBuildInputs ++ backendInputs;
+          cargoBuildOptions = opts: opts ++ [ "--package" pname ];
+        };
+        
+        d30-cli-preview = naersk'.buildPackage rec {
+          pname = "d30-cli-preview";
+          src = ./.;
+          nativeBuildInputs = with pkgs; [ pkg-config cmake makeWrapper ];
+          buildInputs = commonBuildInputs ++ guiInputs;
           cargoBuildOptions = opts: opts ++ [ "--package" pname ];
           postInstall = ''
             wrapProgram "$out/bin/${pname}" \
-              --prefix LD_LIBRARY_PATH : "${LD_LIBRARY_PATH}"
+              --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
           '';
-        });
+        };
 
       in {
-        defaultPackage = mkCliBuild "d30-cli";
-        d30-cli = mkCliBuild "d30-cli";
-        d30-cli-preview = mkCliBuild "d30-cli-preview";
+        inherit d30-cli;
+        inherit d30-cli-preview;
 
-        devShell = pkgs.mkShell (lib.recursiveUpdate commonEnvironment {
-          inherit LD_LIBRARY_PATH;
+        devShell = pkgs.mkShell {
+          LD_LIBRARY_PATH = lib.makeLibraryPath (commonBuildInputs ++ guiInputs ++ backendInputs);
           shellHook = ''
             exec $SHELL
           '';
           nativeBuildInputs = with pkgs; [ rustc cargo rust-analyzer ] ++ buildInputs;
-        });
+        };
       }
     );
 }
