@@ -3,7 +3,7 @@ use std::{
     process::exit,
 };
 
-use show_image::event::WindowKeyboardInputEvent;
+use show_image::event::{VirtualKeyCode, WindowKeyboardInputEvent};
 use snafu::{ResultExt, Whatever};
 
 enum Accepted {
@@ -68,6 +68,12 @@ fn main() -> Result<(), Whatever> {
                             }
                             Some(show_image::event::VirtualKeyCode::N) => {
                                 accepted = Accepted::No;
+                                break 'event_loop;
+                            }
+                            Some(VirtualKeyCode::Q) => {
+                                break 'event_loop;
+                            }
+                            Some(VirtualKeyCode::Escape) => {
                                 break 'event_loop;
                             }
                             _ => {}
