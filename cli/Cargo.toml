@@ -9,7 +9,7 @@ edition = "2021"
 bluetooth-serial-port-async = "0.6.3"
 derive_more = "0.99.17"
 dimensions = "0.1.0"
-image = { version = "0.24.6", features = ["jpeg"] }
+image = { version = "0.24.6", features = ["jpeg", "dds"] }
 imageproc = "0.23.0"
 rusttype = { version = "0.9.3", features = ["gpu_cache"] }
 serialport = "4.2.1"
@@ -34,3 +34,4 @@ eframe = "0.24.1"
 png = "0.17.10"
 # layeredconf = "0.2.3"
 unescape = "0.1.0"
+miniview = "0.6.1"

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "d30",  "cli"
+  "d30",  "cli", "cli-preview"
 ]
 
 # [package]

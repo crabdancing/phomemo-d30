@@ -7,7 +7,7 @@
 
 use std::{
     fs,
-    io::{self, Write},
+    io::{self, Cursor, Write},
     process::Stdio,
     thread,
 };
@@ -19,7 +19,7 @@ use d30::{D30Scale, PrinterAddr};
 use image::DynamicImage;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use show_image::event::WindowKeyboardInputEvent;
+use show_image::event::{WindowKeyboardInputEvent, WindowMouseButtonEvent};
 use snafu::{whatever, ResultExt, Snafu, Whatever};
 
 #[derive(Debug, Parser)]
@@ -135,6 +135,11 @@ enum Accepted {
     Unknown,
 }
 
+// fn backend_miniview(preview_image: DynamicImage) -> Result<Accepted, Whatever> {
+//     let window = miniview::ConfigBuilder::set_lazy_window(, )
+//     // let window = WindowMouseButtonEvent
+// }
+
 fn backend_show_image(preview_image: DynamicImage) -> Result<Accepted, Whatever> {
     let mut accepted = Accepted::Unknown;
     let window = show_image::create_window("image", Default::default())
@@ -222,6 +227,13 @@ fn cmd_show_preview(
             .save(&path)
             .with_whatever_context(|_| "Failed to write to temporary file")?;
     }
+
+    let mut bytes: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+    preview_image.write_to(&mut bytes, image::ImageFormat::Png);
+    let bytes = bytes.into_inner();
+    let preview_image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+        .expect("Failed to load");
+    // preview_image.into_rgb8().
 
     debug!("Preview type: {:?}", preview);
 

@@ -61,8 +61,15 @@ pub fn generate_image(
         D30Scale::Auto => {
             let scale = 100.0;
             let actual_size: Dimensions =
-                imageproc::drawing::text_size(Scale::uniform(scale), &font, &text).into();
-            100.0 * ((label_dimensions.x - 2.0 * margins) / actual_size.x)
+                imageproc::drawing::text_size(Scale::uniform(100.0), &font, &text).into();
+            let scale_by_x = (label_dimensions.x - 2.0 * margins) / actual_size.x;
+            let scale_by_y = (label_dimensions.y - 2.0 * margins) / actual_size.y;
+            100.0
+                * if scale_by_y > scale_by_x {
+                    scale_by_x
+                } else {
+                    scale_by_y
+                }
         }
         D30Scale::Value(font_scale) => *font_scale,
     };
