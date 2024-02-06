@@ -40,6 +40,7 @@
         };
 
       in {
+        defaultPackage = d30-cli;
         inherit d30-cli;
         inherit d30-cli-preview;
 
