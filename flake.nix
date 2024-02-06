@@ -19,10 +19,15 @@
 
         naersk' = pkgs.callPackage naersk {};
         
-        d30-all = naersk'.buildPackage rec {
+        d30-cli-full = naersk'.buildPackage rec {
+          pname = "d30-cli";
           src = ./.;
           nativeBuildInputs = with pkgs; [ pkg-config cmake makeWrapper ];
           buildInputs = commonBuildInputs ++ backendInputs ++ guiInputs;
+          postInstall = ''
+            wrapProgram "$out/bin/${pname}" \
+              --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
+          '';
         };
         
         d30-cli = naersk'.buildPackage rec {
@@ -46,8 +51,8 @@
         };
 
       in {
-        defaultPackage = d30-all;
-        inherit d30-all;
+        defaultPackage = d30-cli-full;
+        inherit d30-cli-full;
         inherit d30-cli;
         inherit d30-cli-preview;
 
