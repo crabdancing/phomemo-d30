@@ -44,7 +44,7 @@
           shellHook = ''
             exec $SHELL
           '';
-          nativeBuildInputs = with pkgs; [ rustc cargo ] ++ buildInputs;
+          nativeBuildInputs = with pkgs; [ rustc cargo rust-analyzer ] ++ buildInputs;
         });
       }
     );
