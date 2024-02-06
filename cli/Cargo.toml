@@ -33,3 +33,4 @@ show-image = { version = "0.13.1", features = ["image"] }
 eframe = "0.24.1"
 png = "0.17.10"
 # layeredconf = "0.2.3"
+unescape = "0.1.0"

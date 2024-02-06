@@ -26,26 +26,61 @@ pub const IMG_PRECURSOR: &[u8] = &[31, 17, 36, 0, 27, 64, 29, 118, 48, 0, 12, 0,
 
 const COLOR_BLACK: image::Rgb<u8> = Rgb([255u8, 255u8, 255u8]);
 
-pub fn generate_image(text: &str, font_scale: f32) -> Result<DynamicImage, Whatever> {
-    let dim = Dimensions::new(320, 96);
-    trace!("{:#?}", &dim);
+#[derive(Debug, Clone)]
+pub enum D30Scale {
+    Value(f32),
+    Auto,
+}
+
+impl FromStr for D30Scale {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "auto" => Ok(Self::Auto),
+            _ => s
+                .parse::<f32>()
+                .map(Self::Value)
+                .map_err(|_| format!("Invalid value: {}", s)),
+        }
+    }
+}
+
+pub fn generate_image(
+    text: &str,
+    margins: f32,
+    font_scale: &D30Scale,
+) -> Result<DynamicImage, Whatever> {
+    let label_dimensions = Dimensions::new(320, 96);
+    trace!("{:#?}", &label_dimensions);
     let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
     let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
-    let scale = Scale::uniform(font_scale);
+    // let scale = Scale::uniform(font_scale);
 
-    let actual_size: Dimensions = imageproc::drawing::text_size(scale, &font, &text).into();
+    let scale = match font_scale {
+        D30Scale::Auto => {
+            let scale = 100.0;
+            let actual_size: Dimensions =
+                imageproc::drawing::text_size(Scale::uniform(scale), &font, &text).into();
+            100.0 * ((label_dimensions.x - 2.0 * margins) / actual_size.x)
+        }
+        D30Scale::Value(font_scale) => *font_scale,
+    };
+    let actual_size: Dimensions =
+        imageproc::drawing::text_size(Scale::uniform(scale), &font, &text).into();
+    let txt_pos = (actual_size - label_dimensions) / -2.;
 
-    let txt_pos = (actual_size - dim) / -2.;
-
-    let mut canvas: ImageBuffer<Rgb<u8>, _> =
-        ImageBuffer::new(dim.width() as u32, dim.height() as u32);
+    let mut canvas: ImageBuffer<Rgb<u8>, _> = ImageBuffer::new(
+        label_dimensions.width() as u32,
+        label_dimensions.height() as u32,
+    );
 
     imageproc::drawing::draw_text_mut(
         &mut canvas,
         COLOR_BLACK,
         txt_pos.x as i32,
         txt_pos.y as i32,
-        scale,
+        Scale::uniform(scale),
         &font,
         text,
     );

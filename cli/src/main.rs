@@ -9,12 +9,13 @@ use std::{
     fs,
     io::{self, Write},
     process::{exit, Stdio},
+    str::FromStr,
 };
 
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
-use d30::PrinterAddr;
+use d30::{D30Scale, PrinterAddr};
 use image::DynamicImage;
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -44,8 +45,11 @@ struct ArgsPrintText {
     device: Option<d30::PrinterAddr>,
     text: String,
     #[arg(short, long)]
-    #[arg(default_value = "40")]
-    scale: f32,
+    #[arg(default_value = "auto")]
+    scale: D30Scale,
+    #[arg(short, long)]
+    #[arg(default_value = "15.0")]
+    margins: f32,
     #[arg(short, long)]
     preview: bool,
 }
@@ -262,8 +266,12 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
     let dry_run = config.dry_run.unwrap_or(false) || args.dry_run;
     let show_preview = config.enable_preview.unwrap_or(false) || args.preview;
     let addr = get_addr(config, args.device.clone())?;
-    debug!("Generating image {} with scale {}", &args.text, &args.scale);
-    let image = d30::generate_image(&args.text, args.scale)
+    debug!(
+        "Generating image {} with scale {:?}",
+        &args.text, &args.scale
+    );
+    let args_text = unescape::unescape(&args.text).expect("Failed to unescape input");
+    let image = d30::generate_image(&args_text, args.margins, &args.scale)
         .with_whatever_context(|_| "Failed to generate image")?;
     let mut preview_image = image.rotate90();
     preview_image.invert();
