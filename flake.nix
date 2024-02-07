@@ -13,9 +13,8 @@
         };
 
         lib = pkgs.lib;
-        guiInputs = with pkgs; with pkgs.xorg; [ libX11 libXcursor libXrandr libXi vulkan-loader libxkbcommon wayland fontconfig ];
-        backendInputs = with pkgs; [ systemd bluez ];
-        commonBuildInputs = with pkgs; [ pkg-config ];
+        guiInputs = with pkgs; with pkgs.xorg; [ libX11 libXcursor libXrandr libXi vulkan-loader libxkbcommon wayland ];
+        commonBuildInputs = with pkgs; [ pkg-config freetype systemd fontconfig  bluez ];
 
         naersk' = pkgs.callPackage naersk {};
         
@@ -23,7 +22,7 @@
           pname = "d30-cli";
           src = ./.;
           nativeBuildInputs = with pkgs; [ pkg-config cmake makeWrapper ];
-          buildInputs = commonBuildInputs ++ backendInputs ++ guiInputs;
+          buildInputs = commonBuildInputs ++ guiInputs;
           postInstall = ''
             wrapProgram "$out/bin/${pname}" \
               --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
@@ -34,7 +33,7 @@
           pname = "d30-cli";
           src = ./.;
           nativeBuildInputs = with pkgs; [ pkg-config cmake makeWrapper ];
-          buildInputs = commonBuildInputs ++ backendInputs;
+          buildInputs = commonBuildInputs;
           cargoBuildOptions = opts: opts ++ [ "--package" pname ];
         };
         
@@ -57,11 +56,11 @@
         inherit d30-cli-preview;
 
         devShell = pkgs.mkShell {
-          LD_LIBRARY_PATH = lib.makeLibraryPath (commonBuildInputs ++ guiInputs ++ backendInputs);
+          LD_LIBRARY_PATH = lib.makeLibraryPath (commonBuildInputs ++ guiInputs);
           shellHook = ''
             exec $SHELL
           '';
-          nativeBuildInputs = with pkgs; [ rustc cargo rust-analyzer ] ++ buildInputs;
+          nativeBuildInputs = with pkgs; [ rustc cargo rust-analyzer ] ++ commonBuildInputs;
         };
       }
     );
