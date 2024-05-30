@@ -7,8 +7,9 @@ use std::{
     fs,
     io::{self, Cursor, Write},
     path::PathBuf,
-    process::{Command, Stdio},
+    process::{exit, Command, Stdio},
     thread,
+    time::Duration,
 };
 
 use advmac::MacAddr6;
@@ -16,7 +17,7 @@ use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
 use d30::{D30Scale, PrinterAddr};
 use image::{DynamicImage, ImageFormat};
-use log::{debug, info};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use snafu::{whatever, OptionExt, ResultExt, Snafu, Whatever};
 
@@ -35,7 +36,7 @@ enum Commands {
     PrintText(ArgsPrintText),
 }
 
-#[derive(clap::Args, Debug)]
+#[derive(clap::Args, Debug, Clone)]
 struct ArgsPrintText {
     #[arg(long)]
     dry_run: bool,
@@ -45,6 +46,9 @@ struct ArgsPrintText {
     #[arg(short, long)]
     #[arg(default_value = "auto")]
     scale: D30Scale,
+    #[arg(long)]
+    #[arg(default_value = "0")]
+    minus_scale: f32,
     #[arg(short, long)]
     #[arg(default_value = "15.0")]
     margins: f32,
@@ -53,6 +57,13 @@ struct ArgsPrintText {
     #[arg(short, long)]
     #[arg(default_value = "1")]
     number_of_images: i32,
+    #[arg(long)]
+    #[arg(default_value = "10")]
+    max_retries: usize,
+    /// Retry wait in seconds
+    #[arg(long)]
+    #[arg(default_value = "1")]
+    retry_wait: f32,
 }
 
 // ---------------------
@@ -134,7 +145,7 @@ enum Accepted {
 }
 
 fn backend_show_image(preview_image: DynamicImage) -> Result<Accepted, Whatever> {
-    let mut accepted = Accepted::Unknown;
+    // let mut accepted = Accepted::Unknown;
 
     let possible_child_targets: Vec<PathBuf> = vec![
         std::env::current_exe()
@@ -205,7 +216,9 @@ fn cmd_show_preview(
     }
 
     let mut bytes: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-    preview_image.write_to(&mut bytes, image::ImageFormat::Png);
+    preview_image
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .ok();
     let bytes = bytes.into_inner();
     let preview_image = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
         .expect("Failed to load");
@@ -278,6 +291,7 @@ fn get_addr(
 }
 
 fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> {
+    let mut args = args.to_owned();
     let dry_run = config.dry_run.unwrap_or(false) || args.dry_run;
     let show_preview = config.enable_preview.unwrap_or(false) || args.preview;
     let addr = get_addr(config, args.device.clone())?;
@@ -286,7 +300,17 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
         &args.text, &args.scale
     );
     let args_text = unescape::unescape(&args.text).expect("Failed to unescape input");
-    let image = d30::generate_image(&args_text, args.margins, &args.scale)
+    if args.minus_scale != 0.0 {
+        match &mut args.scale {
+            D30Scale::Value(_) => {
+                warn!("Not sure why you gave me a minus scale when I'm not autoscaling. Ignoring value");
+            }
+            D30Scale::Auto { ref mut minus } => {
+                *minus = args.minus_scale;
+            }
+        }
+    }
+    let image = d30::generate_image(&args_text, args.margins, args.scale)
         .with_whatever_context(|_| "Failed to generate image")?;
     let mut preview_image = image.rotate90();
     preview_image.invert();
@@ -309,10 +333,24 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
         bluetooth_serial_port_async::BtSocket::new(bluetooth_serial_port_async::BtProtocol::RFCOMM)
             .with_whatever_context(|_| "Failed to open socket")?;
 
+    let mut connected = false;
     if !dry_run {
-        socket
-            .connect(BtAddr(addr.to_array()))
-            .with_whatever_context(|_| "Failed to connect")?;
+        for _ in 0..args.max_retries {
+            match socket.connect(BtAddr(addr.to_array())) {
+                Ok(_) => {
+                    connected = true;
+                    break;
+                }
+                Err(e) => {
+                    warn!("Failed to connect: {}", e);
+                    std::thread::sleep(Duration::from_secs_f32(args.retry_wait));
+                }
+            }
+        }
+    }
+    if !connected {
+        error!("Failed to connect after {} retries!", args.max_retries);
+        exit(1);
     }
     debug!("Init connection");
     if !dry_run {

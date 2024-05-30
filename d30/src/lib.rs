@@ -26,10 +26,10 @@ pub const IMG_PRECURSOR: &[u8] = &[31, 17, 36, 0, 27, 64, 29, 118, 48, 0, 12, 0,
 
 const COLOR_BLACK: image::Rgb<u8> = Rgb([255u8, 255u8, 255u8]);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum D30Scale {
     Value(f32),
-    Auto,
+    Auto { minus: f32 },
 }
 
 impl FromStr for D30Scale {
@@ -37,7 +37,7 @@ impl FromStr for D30Scale {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "auto" => Ok(Self::Auto),
+            "auto" => Ok(Self::Auto { minus: 0.0 }),
             _ => s
                 .parse::<f32>()
                 .map(Self::Value)
@@ -49,7 +49,7 @@ impl FromStr for D30Scale {
 pub fn generate_image(
     text: &str,
     margins: f32,
-    font_scale: &D30Scale,
+    font_scale: D30Scale,
 ) -> Result<DynamicImage, Whatever> {
     let label_dimensions = Dimensions::new(320, 96);
     trace!("{:#?}", &label_dimensions);
@@ -58,8 +58,8 @@ pub fn generate_image(
     // let scale = Scale::uniform(font_scale);
 
     let scale = match font_scale {
-        D30Scale::Auto => {
-            let scale = 100.0;
+        D30Scale::Auto { minus } => {
+            // let scale = 100.0;
             let actual_size: Dimensions =
                 imageproc::drawing::text_size(Scale::uniform(100.0), &font, &text).into();
             let scale_by_x = (label_dimensions.x - 2.0 * margins) / actual_size.x;
@@ -70,8 +70,9 @@ pub fn generate_image(
                 } else {
                     scale_by_y
                 }
+                - minus
         }
-        D30Scale::Value(font_scale) => *font_scale,
+        D30Scale::Value(font_scale) => font_scale,
     };
     let actual_size: Dimensions =
         imageproc::drawing::text_size(Scale::uniform(scale), &font, &text).into();
