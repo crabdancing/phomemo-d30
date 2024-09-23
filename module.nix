@@ -16,10 +16,16 @@
   };
 in {
   options.programs.phomemo-d30 = {
-    package =
-      if (cfg.preview == "show_image")
-      then d30-cli-full
-      else d30-cli-minimal;
+    package = lib.mkOption {
+      type = lib.types.package;
+      default =
+        if (cfg.preview == "show_image")
+        then d30-cli-full
+        else d30-cli-minimal;
+      description = ''
+        Package to use.
+      '';
+    };
     enable = lib.mkEnableOption "phomemo-d30";
 
     default = lib.mkOption {
@@ -42,8 +48,7 @@ in {
     };
 
     preview = lib.mkOption {
-      # type = lib.types.oneOf [(lib.types.enum ["show_image" "wezterm" "gio"]) lib.types.str];
-      type = lib.types.str;
+      type = lib.types.oneOf [(lib.types.enum ["show_image" "wezterm" "gio"]) lib.types.str];
       default = "gio";
       description = ''
         Preview backend to use. Defaults to `d30`.
