@@ -27,11 +27,7 @@
         lib,
         ...
       }: let
-        # pkgs = (import inputs.nixpkgs) {
-        #   inherit system;
-        # };
-        # lib = pkgs.lib;
-        guiInputs = with pkgs; with pkgs.xorg; [libX11 libXcursor libXrandr libXi vulkan-loader libxkbcommon wayland];
+        guiInputs = (with pkgs.xorg; [libX11 libXcursor libXrandr libXi]) ++ (with pkgs; [vulkan-loader libxkbcommon wayland]);
         commonBuildInputs = with pkgs; [pkg-config freetype systemd fontconfig bluez];
 
         naersk' = pkgs.callPackage naersk {};
@@ -66,13 +62,13 @@
               --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
           '';
         };
-        shell = pkgs.mkShell {
-          LD_LIBRARY_PATH = lib.makeLibraryPath (commonBuildInputs ++ guiInputs);
-          shellHook = ''
-            exec $SHELL
-          '';
-          nativeBuildInputs = with pkgs; [rustc cargo rust-analyzer] ++ commonBuildInputs;
-        };
+        # shell = pkgs.mkShell {
+        #   LD_LIBRARY_PATH = lib.makeLibraryPath (commonBuildInputs ++ guiInputs);
+        #   shellHook = ''
+        #     exec $SHELL
+        #   '';
+        #   nativeBuildInputs = with pkgs; [rustc cargo rust-analyzer] ++ commonBuildInputs;
+        # };
       in {
         # imports = [
         #   inputs.devshell.flakeModule
