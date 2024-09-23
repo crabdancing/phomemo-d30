@@ -334,6 +334,7 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
             .with_whatever_context(|_| "Failed to open socket")?;
 
     let mut connected = false;
+    println!("Connecting...");
     if !dry_run {
         for _ in 0..args.max_retries {
             match socket.connect(BtAddr(addr.to_array())) {
