@@ -11,7 +11,7 @@
       flake = let
         module = import ./module.nix {inherit inputs;};
       in {
-        nixosModules = {
+        homeManagerModules = {
           default = module;
           phomemo-d30 = module;
         };
