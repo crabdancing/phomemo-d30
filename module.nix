@@ -59,7 +59,7 @@ in {
     ];
 
     xdg.configFile."phomemo-library/phomemo-cli-config.toml".source = tomlFormat.generate "phomemo-cli-config.toml" {
-      preview = cfg.preview;
+      preview = toString cfg.preview;
     };
 
     xdg.configFile."phomemo-library/phomemo-config.toml".source = tomlFormat.generate "phomemo-config.toml" {
