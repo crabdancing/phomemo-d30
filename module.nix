@@ -1,89 +1,69 @@
-{
+{self}: {
   config,
   lib,
   pkgs,
   ...
 }: let
-  cfg = config.programs.chromexup;
+  cfg = config.programs.phomemo-d30;
   tomlFormat = pkgs.formats.toml {};
-  defaultPackage = pkgs.callPackage ./pkg.nix {inherit chromexup-src;};
+  d30-cli-full = pkgs.callPackage ./pkg.nix {
+    inherit (self) naersk;
+    fullBuild = true;
+    guiPreview = true;
+  };
+  d30-cli-minimal = pkgs.callPackage ./pkg.nix {
+    inherit (self) naersk;
+  };
 in {
-  options.programs.chromexup = {
-    package = defaultPackage;
-    enable = lib.mkEnableOption "chromexup";
+  options.programs.phomemo-d30 = {
+    package =
+      if (cfg.preview == "show_image")
+      then d30-cli-full
+      else d30-cli-minimal;
+    enable = lib.mkEnableOption "phomemo-d30";
 
-    branding = lib.mkOption {
-      type = lib.types.enum ["inox" "iridium" "chromium"];
-      default = "chromium";
-      description = "Name of the browser user data directory.";
+    default = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "The default device to pick. Can be a device name, or a bluetooth address.";
+      example = {
+        default = "alice_desk";
+      };
     };
 
-    parallelDownloads = lib.mkOption {
-      type = lib.types.int;
-      default = 4;
-      description = "Parallel download threads.";
-    };
-
-    removeOrphans = lib.mkOption {
-      type = lib.types.bool;
-      # should do this by default to have more nixos-like behavior
-      default = true;
-      description = "Remove extensions not defined in the extension section.";
-    };
-
-    extensions = lib.mkOption {
+    resolution = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = {};
-      description = "List of browser extensions to manage.";
+      description = "Key-value list of device names for phomemo devices, alongside their actual addresses";
       example = {
-        HTTPSEverywhere = "gcbommkclmclpchllfjekcdonpmejbdp";
+        alice_desk = "E9:7B:61:9E:76:47";
+        bob_desk = "11:94:FC:4A:99:AC";
       };
+    };
+
+    preview = lib.mkOption {
+      type = lib.types.anyOf [(lib.types.enum ["show_image" "wezterm" "gio"]) lib.types.str];
+      default = "gio";
+      description = ''
+        Preview backend to use. Defaults to `d30`.
+        Requires `d30-cli-full` package for `show_image` backend.
+      '';
+      example = "show_image";
     };
   };
 
   config = lib.mkIf cfg.enable {
     home.packages = [
-      package
+      cfg.package
     ];
-    xdg.configFile."chromexup/config.ini".source = tomlFormat.generate "config.ini" {
-      main = {
-        branding = cfg.branding;
-        parallel_downloads = toString cfg.parallelDownloads;
-        remove_orphans =
-          if cfg.removeOrphans
-          then "True"
-          else "False";
-      };
-      extensions = cfg.extensions;
+
+    xdg.configFile."phomemo-library/phomemo-cli-config.toml".source = tomlFormat.generate "phomemo-cli-config.toml" {
+      preview = cfg.preview;
     };
 
-    # systemd.user.timers.chromexup = {
-    #   Unit = {
-    #     Description = "Run chromexup daily";
-    #   };
-
-    #   Timer = {
-    #     OnActiveSec = 10;
-    #     OnCalendar = "daily";
-    #     Persistent = true;
-    #   };
-
-    #   Install = {
-    #     WantedBy = ["timers.target"];
-    #   };
-    # };
-
-    # systemd.user.services.chromexup = {
-    #   Unit = {
-    #     Description = "External extension updater for Chromium based browsers";
-    #     After = ["network-online.target" "psd-resync.service"];
-    #     Wants = ["network-online.target"];
-    #   };
-
-    #   Service = {
-    #     Type = "simple";
-    #     ExecStart = "${package}/bin/chromexup";
-    #   };
-    # };
+    xdg.configFile."phomemo-library/phomemo-config.toml".source = tomlFormat.generate "phomemo-config.toml" {
+      default = cfg.default;
+      resolution = cfg.resolution;
+    };
   };
 }
