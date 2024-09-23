@@ -9,7 +9,7 @@
   outputs = {naersk, ...} @ inputs:
     inputs.flake-parts.lib.mkFlake {inherit inputs;} {
       flake = let
-        module = ./module.nix;
+        module = import ./module.nix {inherit inputs;};
       in {
         nixosModules = {
           default = module;

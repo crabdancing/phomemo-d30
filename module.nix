@@ -1,4 +1,4 @@
-{self}: {
+{inputs}: {
   config,
   lib,
   pkgs,
@@ -7,12 +7,12 @@
   cfg = config.programs.phomemo-d30;
   tomlFormat = pkgs.formats.toml {};
   d30-cli-full = pkgs.callPackage ./pkg.nix {
-    inherit (self) naersk;
+    inherit (inputs) naersk;
     fullBuild = true;
     guiPreview = true;
   };
   d30-cli-minimal = pkgs.callPackage ./pkg.nix {
-    inherit (self) naersk;
+    inherit (inputs) naersk;
   };
 in {
   options.programs.phomemo-d30 = {
