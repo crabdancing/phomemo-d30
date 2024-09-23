@@ -6,15 +6,15 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
   };
 
-  outputs = {
-    flake-parts,
-    naersk,
-    nixpkgs,
-    ...
-  } @ inputs:
+  outputs = {naersk, ...} @ inputs:
     inputs.flake-parts.lib.mkFlake {inherit inputs;} {
-      flake = {
-        # Put your original flake attributes here.
+      flake = let
+        module = ./module.nix;
+      in {
+        nixosModules = {
+          default = module;
+          phomemo-d30 = module;
+        };
       };
       systems = [
         "x86_64-linux"
@@ -27,41 +27,50 @@
         lib,
         ...
       }: let
-        guiInputs = (with pkgs.xorg; [libX11 libXcursor libXrandr libXi]) ++ (with pkgs; [vulkan-loader libxkbcommon wayland]);
-        commonBuildInputs = with pkgs; [pkg-config freetype systemd fontconfig bluez];
-
-        naersk' = pkgs.callPackage naersk {};
-
-        d30-cli-full = naersk'.buildPackage rec {
-          pname = "d30-cli";
-          src = ./.;
-          nativeBuildInputs = with pkgs; [pkg-config cmake makeWrapper];
-          buildInputs = commonBuildInputs ++ guiInputs;
-          postInstall = ''
-            wrapProgram "$out/bin/${pname}" \
-              --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
-          '';
+        # guiInputs = (with pkgs.xorg; [libX11 libXcursor libXrandr libXi]) ++ (with pkgs; [vulkan-loader libxkbcommon wayland]);
+        # commonBuildInputs = with pkgs; [pkg-config freetype systemd fontconfig bluez];
+        # naersk' = pkgs.callPackage naersk {};
+        d30-cli-full = pkgs.callPackage ./pkgs.nix {
+          inherit naersk;
+          fullBuild = true;
+          guiPreview = true;
         };
-
-        d30-cli = naersk'.buildPackage rec {
-          pname = "d30-cli";
-          src = ./.;
-          nativeBuildInputs = with pkgs; [pkg-config cmake makeWrapper];
-          buildInputs = commonBuildInputs;
-          cargoBuildOptions = opts: opts ++ ["--package" pname];
+        d30-cli-preview = pkgs.callPackage ./pkgs.nix {
+          inherit naersk;
+          fullBuild = false;
+          guiPreview = true;
         };
-
-        d30-cli-preview = naersk'.buildPackage rec {
-          pname = "d30-cli-preview";
-          src = ./.;
-          nativeBuildInputs = with pkgs; [pkg-config cmake makeWrapper];
-          buildInputs = commonBuildInputs ++ guiInputs;
-          cargoBuildOptions = opts: opts ++ ["--package" pname];
-          postInstall = ''
-            wrapProgram "$out/bin/${pname}" \
-              --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
-          '';
+        d30-cli = pkgs.callPackage ./pkgs.nix {
+          inherit naersk;
         };
+        # d30-cli-full = naersk'.buildPackage rec {
+        #   pname = "d30-cli";
+        #   src = ./.;
+        #   nativeBuildInputs = with pkgs; [pkg-config cmake makeWrapper];
+        #   buildInputs = commonBuildInputs ++ guiInputs;
+        #   postInstall = ''
+        #     wrapProgram "$out/bin/${pname}" \
+        #       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
+        #   '';
+        # };
+        # d30-cli = naersk'.buildPackage rec {
+        #   pname = "d30-cli";
+        #   src = ./.;
+        #   nativeBuildInputs = with pkgs; [pkg-config cmake makeWrapper];
+        #   buildInputs = commonBuildInputs;
+        #   cargoBuildOptions = opts: opts ++ ["--package" pname];
+        # };
+        # d30-cli-preview = naersk'.buildPackage rec {
+        #   pname = "d30-cli-preview";
+        #   src = ./.;
+        #   nativeBuildInputs = with pkgs; [pkg-config cmake makeWrapper];
+        #   buildInputs = commonBuildInputs ++ guiInputs;
+        #   cargoBuildOptions = opts: opts ++ ["--package" pname];
+        #   postInstall = ''
+        #     wrapProgram "$out/bin/${pname}" \
+        #       --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath (buildInputs ++ guiInputs)}"
+        #   '';
+        # };
         # shell = pkgs.mkShell {
         #   LD_LIBRARY_PATH = lib.makeLibraryPath (commonBuildInputs ++ guiInputs);
         #   shellHook = ''
