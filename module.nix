@@ -42,7 +42,7 @@ in {
     };
 
     preview = lib.mkOption {
-      type = lib.types.anyOf [(lib.types.enum ["show_image" "wezterm" "gio"]) lib.types.str];
+      type = lib.types.oneOf [(lib.types.enum ["show_image" "wezterm" "gio"]) lib.types.str];
       default = "gio";
       description = ''
         Preview backend to use. Defaults to `d30`.
