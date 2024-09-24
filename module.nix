@@ -63,14 +63,16 @@ in {
       cfg.package
     ];
 
-    xdg.configFile."phomemo-library/phomemo-cli-config.toml".source = tomlFormat.generate "phomemo-cli-config.toml" ({}
-      // (lib.optionalAttrs (cfg.preview != null) {
-        preview = cfg.preview;
-      }));
-
-    xdg.configFile."phomemo-library/phomemo-config.toml".source = tomlFormat.generate "phomemo-config.toml" {
-      default = cfg.default;
-      resolution = cfg.resolution;
+    xdg.configFile."phomemo-library/phomemo-cli-config.toml".source = tomlFormat.generate "phomemo-cli-config.toml" {
+      preview = cfg.preview;
     };
+
+    xdg.configFile."phomemo-library/phomemo-config.toml".source =
+      tomlFormat.generate "phomemo-config.toml" {
+        resolution = cfg.resolution;
+      }
+      // (lib.optionalAttrs (cfg.default != null) {
+        default = cfg.default;
+      });
   };
 }
