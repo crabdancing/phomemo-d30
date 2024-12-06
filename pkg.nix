@@ -15,6 +15,7 @@
   lib,
   guiPreview ? false,
   fullBuild ? false,
+  rust-analyzer,
   ...
 }: let
   guiInputs = (with xorg; [libX11 libXcursor libXrandr libXi]) ++ [vulkan-loader libxkbcommon wayland];
@@ -28,7 +29,7 @@
   buildInputs = commonBuildInputs ++ (lib.optionals guiPreview guiInputs);
 in (naersk'.buildPackage {
     src = ./.;
-    nativeBuildInputs = [pkg-config cmake makeWrapper];
+    nativeBuildInputs = [pkg-config cmake makeWrapper rust-analyzer];
     inherit pname buildInputs;
   }
   // (lib.optionalAttrs guiPreview {

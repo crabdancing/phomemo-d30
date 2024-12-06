@@ -8,7 +8,6 @@ use std::{
     io::{self, Cursor, Write},
     path::PathBuf,
     process::{exit, Command, Stdio},
-    thread,
     time::Duration,
 };
 
@@ -337,6 +336,7 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
     println!("Connecting...");
     if !dry_run {
         for _ in 0..args.max_retries {
+            info!("Connection address: {}", addr);
             match socket.connect(BtAddr(addr.to_array())) {
                 Ok(_) => {
                     connected = true;

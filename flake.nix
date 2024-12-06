@@ -47,6 +47,13 @@
           inherit d30-cli;
           inherit d30-cli-preview;
         };
+        # devShells.default = pkgs.mkShell {
+        #   buildInputs = with pkgs; [
+        #     rust-analyzer
+        #     cargo
+        #     # rust
+        #   ];
+        # };
       };
     };
 }
