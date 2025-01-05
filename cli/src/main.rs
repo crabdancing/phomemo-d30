@@ -16,7 +16,7 @@ use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
 use d30::{D30Scale, PrinterAddr};
 use image::{DynamicImage, ImageFormat};
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use snafu::{whatever, OptionExt, ResultExt, Snafu, Whatever};
 
@@ -78,7 +78,7 @@ enum PreviewType {
     Gio,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 struct Config {
     dry_run: Option<bool>,
     enable_preview: Option<bool>,
@@ -255,34 +255,40 @@ fn get_addr(
         // The case that the user has specified an address, and we have a config loaded
         // We must use config to attempt to resolve the address
         (Some(user_specified_addr), Ok(d30_config)) => {
+            info!("Device specified by user. Resolving via config.");
             let resolved_addr = d30_config.resolve_addr(&user_specified_addr)?;
             addr = resolved_addr;
             config.d30_config = Some(d30_config);
         }
         // The case that the user has specified an address, but we do NOT have a config
         // We must hope that the user gave us a fully quallified address & not a hostname
-        (Some(user_specified_addr), Err(_)) => match user_specified_addr {
-            PrinterAddr::MacAddr(user_addr) => {
-                addr = user_addr;
-            }
-            PrinterAddr::PrinterName(name) => {
-                whatever!(
+        (Some(user_specified_addr), Err(_)) => {
+            info!("Address specified by user. NO config. This will fail if address is not fully qualified.");
+            match user_specified_addr {
+                PrinterAddr::MacAddr(user_addr) => {
+                    addr = user_addr;
+                }
+                PrinterAddr::PrinterName(name) => {
+                    whatever!(
                         "Cannot resolve \"{}\" because config file could not be retrieved.\n\
                         \tIf \"{}\" is meant to be an address rather than a device name, you should check your formatting,\n\
                         \tas it does not look like a valid MAC address.",
                         name, name
                     );
+                }
             }
-        },
+        }
         // No address on CLI, but there IS a config!
         // Try to resolve from config
         (None, Ok(config)) => {
+            info!("No address on CLI, but we have a config. Will attempt to identify default target from config.");
             addr = config
                 .resolve_default()
                 .with_whatever_context(|_| "Could not resolve default MAC address")?;
         }
 
         (None, Err(_)) => {
+            error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
             whatever!("You did not correctly specify an address on command line or config file.")
         }
     }
@@ -290,6 +296,7 @@ fn get_addr(
 }
 
 fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> {
+    info!("Call: cmd_print");
     let mut args = args.to_owned();
     let dry_run = config.dry_run.unwrap_or(false) || args.dry_run;
     let show_preview = config.enable_preview.unwrap_or(false) || args.preview;
@@ -390,28 +397,34 @@ async fn main() -> Result<(), Whatever> {
 
     let args = Arguments::parse();
     debug!("Args: {:#?}", &args);
-    match Config::load_config() {
-        Ok(mut config) => match &args.command {
-            Commands::PrintText(args) => {
-                cmd_print(&mut config, &args)
-                    .with_whatever_context(|_| "Could not complete print command")?;
+    let mut config = match Config::load_config() {
+        Ok(config) => config,
+        Err(e) => match e {
+            ReadD30CliConfigError::CouldNotParse { source: e } => {
+                whatever!("Could not parse: {}", e);
+            }
+
+            ReadD30CliConfigError::CouldNotGetXDGPath { source } => {
+                debug!("Could not get XDG path: {}", source);
+                Config::default()
+            }
+
+            ReadD30CliConfigError::CouldNotReadFile { source } => {
+                debug!("Could not read file: {}", source);
+                Config::default()
+            }
+
+            ReadD30CliConfigError::CouldNotPlaceConfigFile { source } => {
+                debug!("Could not place config file: {}", source);
+                Config::default()
             }
         },
+    };
 
-        Err(ReadD30CliConfigError::CouldNotParse { source: e }) => {
-            whatever!("Could not parse: {}", e);
-        }
-
-        Err(ReadD30CliConfigError::CouldNotGetXDGPath { source }) => {
-            debug!("Could not get XDG path: {}", source);
-        }
-
-        Err(ReadD30CliConfigError::CouldNotReadFile { source }) => {
-            debug!("Could not read file: {}", source);
-        }
-
-        Err(ReadD30CliConfigError::CouldNotPlaceConfigFile { source }) => {
-            debug!("Could not place config file: {}", source);
+    match &args.command {
+        Commands::PrintText(args) => {
+            cmd_print(&mut config, &args)
+                .with_whatever_context(|_| "Could not complete print command")?;
         }
     }
 

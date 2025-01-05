@@ -203,6 +203,7 @@ impl Display for PrinterAddr {
         Ok(())
     }
 }
+
 mod printer_addr_serde {
     use super::PrinterAddr;
     use serde::{self, Deserialize, Deserializer, Serializer};
