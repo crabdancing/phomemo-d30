@@ -31,6 +31,9 @@ in (naersk'.buildPackage {
     src = ./.;
     nativeBuildInputs = [pkg-config cmake makeWrapper rust-analyzer];
     inherit pname buildInputs;
+    meta = {
+      mainProgram = "d30-cli";
+    };
   }
   // (lib.optionalAttrs guiPreview {
     postInstall = ''
