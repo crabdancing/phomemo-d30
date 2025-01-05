@@ -63,15 +63,14 @@ preview = "gio"
 enable_preview = true
 ```
 
-## Configuration, declarative (via NixOS)
+## Configuration, declarative (via NixOS & system flake)
 
 Add to your flake inputs:
 
 ```nix
 inputs = {
- . . .
+  # Somewhere in your `inputs` context, put a `phomemo-d30` input:
   phomemo-d30.url = "github:crabdancing/phomemo-d30";
- . . .
 };
 ```
 
@@ -101,3 +100,5 @@ programs.phomemo-d30 = {
 };
 
 ```
+
+This can be configured per-user.
