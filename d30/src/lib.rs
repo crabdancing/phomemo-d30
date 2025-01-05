@@ -224,12 +224,9 @@ mod printer_addr_serde {
     }
 }
 
-// D30Config
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct D30Config {
-    #[serde(default)]
-    pub default: Option<PrinterAddr>,
+    pub default_device: Option<PrinterAddr>,
     pub resolution: IndexMap<String, MacAddr6>,
 }
 
@@ -289,7 +286,7 @@ impl D30Config {
     pub fn resolve_default(&self) -> Result<MacAddr6, Whatever> {
         self.resolve_addr(
             &self
-                .default
+                .default_device
                 .as_ref()
                 .expect("Address not specified, and no default is set in config. Panik.\nPlease check your config and set a default, or set a device via CLI flag."),
         )

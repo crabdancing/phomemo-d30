@@ -38,9 +38,9 @@ Under this directory, it expects two config files. One is for the library itself
 This is of a format like so:
 
 ```toml
-# default value. E.g., if not specifying the target device, it will default to the kitchen.
+# default device. E.g., if not specifying the target device, it will default to the kitchen.
 # Side note: this can be the device name, or the MAC address.
-default = "kitchen"
+default_device = "kitchen"
 [resolution]
 # Mappings device names to their corresponding device MAC addresses
 my_desk = "40:5B:A4:2F:05:46"
@@ -92,7 +92,7 @@ In home-manager context, you can then configure via:
 ```nix
 programs.phomemo-d30 = {
   enable = true;
-  default = "kitchen";
+  default_device = "kitchen";
   resolution = {
     my_desk = "40:5B:A4:2F:05:46";
     kitchen = "DB:1E:B4:E7:A3:75";

@@ -28,7 +28,7 @@ in {
     };
     enable = lib.mkEnableOption "phomemo-d30";
 
-    default = lib.mkOption {
+    default_device = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = "The default device to pick. Can be a device name, or a bluetooth address.";
@@ -71,8 +71,8 @@ in {
       tomlFormat.generate "phomemo-config.toml" {
         resolution = cfg.resolution;
       }
-      // (lib.optionalAttrs (cfg.default != null) {
-        default = cfg.default;
+      // (lib.optionalAttrs (cfg.default_device != null) {
+        default_device = cfg.default_device;
       });
     # // (lib.optionalAttrs (cfg.default != null) {
     #        default = cfg.default;
