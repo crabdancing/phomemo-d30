@@ -294,10 +294,6 @@ fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacA
 enum CLIError {
     #[snafu(display("D30 library error"))]
     D30LibError { source: d30::D30Error },
-    #[snafu(display("Failed to generate image"))]
-    FailedToGenImage { source: d30::D30Error },
-    #[snafu(display("Failed to show preview"))]
-    FailedToShowPreview { source: d30::D30Error },
     #[snafu(display("Failed to prompt user in interactive mode"))]
     FailedToPromptUser { source: InquireError },
 
@@ -359,8 +355,7 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> 
             }
         }
     }
-    let image =
-        d30::generate_image(&args_text, args.margins, args.scale).context(FailedToGenImageSnafu)?;
+    let image = d30::generate_image(&args_text, args.margins, args.scale).context(D30LibSnafu)?;
     let mut preview_image = image.rotate90();
     preview_image.invert();
     if show_preview {
