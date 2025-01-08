@@ -11,11 +11,12 @@ use std::{
     time::Duration,
 };
 
-use advmac::MacAddr6;
-use bluetooth_serial_port_async::BtAddr;
+use advmac::{MacAddr6, ParseError};
+use bluetooth_serial_port_async::{BtAddr, BtError};
 use clap::{Parser, Subcommand};
 use d30::D30Scale;
 use image::{DynamicImage, ImageFormat};
+use inquire::InquireError;
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use snafu::{whatever, OptionExt, ResultExt, Snafu, Whatever};
@@ -86,27 +87,19 @@ struct Config {
     d30_config: Option<d30::D30Config>,
 }
 
-#[derive(Debug, Snafu)]
-pub enum ReadD30CliConfigError {
-    #[snafu(display("Could not get XDG path"))]
-    CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
-    #[snafu(display("Could not place config file"))]
-    CouldNotPlaceConfigFile { source: io::Error },
-    #[snafu(display("Failed to read in automatically detected D30 CLI configuration path"))]
-    CouldNotReadFile { source: io::Error },
-    #[snafu(display("Failed to serialize TOML D30 config"))]
-    CouldNotParse { source: toml::de::Error },
-}
+// #[derive(Debug, Snafu)]
+// pub enum ReadD30CliConfigError {
+// }
 
 impl Config {
-    fn load_config() -> Result<Self, ReadD30CliConfigError> {
+    fn load_config() -> Result<Self, CLIError> {
         let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
             .context(CouldNotGetXDGPathSnafu)?;
         let config_path = phomemo_lib_path
             .place_config_file("phomemo-cli-config.toml")
             .context(CouldNotPlaceConfigFileSnafu)?;
         let contents = fs::read_to_string(config_path).context(CouldNotReadFileSnafu)?;
-        Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
+        Ok(toml::from_str(contents.as_str()).context(CouldNotParseTOMLSnafu)?)
     }
 }
 
@@ -246,53 +239,99 @@ fn cmd_show_preview(
     })
 }
 
-fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacAddr6, Whatever> {
-    let addr: MacAddr6;
+fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacAddr6, CLIError> {
     match (user_maybe_addr, d30::D30Config::read_d30_config()) {
         // The case that the user has specified an address, and we have a config loaded
         // We must use config to attempt to resolve the address
         (Some(user_specified_addr), Ok(d30_config)) => {
             info!("Device specified by user. Resolving via config.");
-            let resolved_addr = d30_config.resolve_addr(&user_specified_addr)?;
-            addr = resolved_addr;
+            let resolved_addr = d30_config
+                .resolve_addr(&user_specified_addr)
+                .context(D30LibSnafu)?;
             config.d30_config = Some(d30_config);
+            Ok(resolved_addr)
         }
         // The case that the user has specified an address, but we do NOT have a config
         // We must hope that the user gave us a fully quallified address & not a hostname
         (Some(user_specified_addr), Err(_)) => {
             info!("Address specified by user. NO config. This will fail if address is not fully qualified.");
-            match user_specified_addr.parse::<MacAddr6>() {
-                Ok(user_addr) => {
-                    addr = user_addr;
-                }
-                Err(e) => {
-                    whatever!(
-                        "Cannot resolve \"{}\" because config file could not be retrieved.\n\
-                        \tIf \"{}\" is meant to be an address rather than a device name, you should check your formatting,\n\
-                        \tas it does not look like a valid MAC address.\nCaused by: {}",
-                        user_specified_addr, user_specified_addr, e
-                    );
-                }
-            }
+            Ok(user_specified_addr
+                .parse::<MacAddr6>()
+                .context(CouldNotParseMacAddrSnafu {
+                    address: user_specified_addr.clone(),
+                })?)
         }
         // No address on CLI, but there IS a config!
         // Try to resolve from config
         (None, Ok(config)) => {
             info!("No address on CLI, but we have a config. Will attempt to identify default target from config.");
-            addr = config
-                .resolve_default()
-                .with_whatever_context(|_| "Could not resolve default MAC address")?;
+            match config.resolve_default() {
+                Ok(addr) => Ok(addr),
+                Err(e) => {
+                    //     // ret
+                    // Err(e)
+
+                    error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
+                    // whatever!(
+                    //     "You did not correctly specify an address on command line or config file."
+                    // )
+                    // Err(e)
+                    // todo!()
+                    Err(e).context(D30LibSnafu)
+                }
+            }
+            // .with_whatever_context(|_| "Could not resolve default MAC address")?;
         }
 
         (None, Err(_)) => {
             error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
-            whatever!("You did not correctly specify an address on command line or config file.")
+            // whatever!("You did not correctly specify an address on command line or config file.")
+            todo!()
         }
     }
-    Ok(addr)
+    // if addr_not_specified {
+    //     error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
+    //     whatever!("You did not correctly specify an address on command line or config file.")
+    // }
+    // Ok(addr)
 }
 
-fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> {
+#[derive(Debug, Snafu)]
+enum CLIError {
+    // #[snafu(display("Failed to resolve device MAC address: {source}"))]
+    // CouldNotResolve { source: d30::ResolveError },
+    #[snafu(display("D30 library error"))]
+    D30LibError { source: d30::D30Error },
+    #[snafu(display("Failed to generate image"))]
+    FailedToGenImage { source: Whatever },
+    #[snafu(display("Failed to show preview"))]
+    FailedToShowPreview { source: Whatever },
+    #[snafu(display("Failed to prompt user in interactive mode"))]
+    FailedToPromptUser { source: InquireError },
+
+    #[snafu(display("Error while attempting task `{task}` in bluetooth backend: {source}"))]
+    BluetoothBackend { source: BtError, task: String },
+
+    #[snafu(display("IO error while attempting to execute task: {task}"))]
+    IOError {
+        task: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Could not get XDG path"))]
+    CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
+    #[snafu(display("Could not place config file"))]
+    CouldNotPlaceConfigFile { source: io::Error },
+    #[snafu(display("Failed to read in automatically detected D30 CLI configuration path"))]
+    CouldNotReadFile { source: io::Error },
+    #[snafu(display("Failed to serialize TOML D30 config"))]
+    CouldNotParseTOML { source: toml::de::Error },
+
+    #[snafu(display("Could not parse MAC address: {address}"))]
+    CouldNotParseMacAddr { source: ParseError, address: String },
+}
+
+fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> {
     info!("Call: cmd_print");
     let mut args = args.to_owned();
     let dry_run = config.dry_run.unwrap_or(false) || args.dry_run;
@@ -313,18 +352,20 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
             }
         }
     }
-    let image = d30::generate_image(&args_text, args.margins, args.scale)
-        .with_whatever_context(|_| "Failed to generate image")?;
+    let image =
+        d30::generate_image(&args_text, args.margins, args.scale).context(FailedToGenImageSnafu)?;
     let mut preview_image = image.rotate90();
     preview_image.invert();
     if show_preview {
-        let should_accept = match cmd_show_preview(config.preview.clone(), preview_image)? {
+        let should_accept = match cmd_show_preview(config.preview.clone(), preview_image)
+            .context(FailedToShowPreviewSnafu)?
+        {
             Accepted::Yes => true,
             Accepted::No => false,
             Accepted::Unknown => inquire::Confirm::new("Displayed preview. Accept this print?")
                 .with_default(false)
                 .prompt_skippable()
-                .with_whatever_context(|_| "Failed to ask user whether to accept")?
+                .context(FailedToPromptUserSnafu)?
                 .unwrap_or(false),
         };
         if !should_accept {
@@ -334,7 +375,9 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
     }
     let mut socket =
         bluetooth_serial_port_async::BtSocket::new(bluetooth_serial_port_async::BtProtocol::RFCOMM)
-            .with_whatever_context(|_| "Failed to open socket")?;
+            .context(BluetoothBackendSnafu {
+                task: "opening socket".to_string(),
+            })?;
 
     let mut connected = false;
     println!("Connecting...");
@@ -359,27 +402,27 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), Whatever> 
     }
     debug!("Init connection");
     if !dry_run {
-        socket
-            .write(d30::INIT_BASE_FLAT)
-            .with_whatever_context(|_| "Failed to send magic init bytes")?;
+        socket.write(d30::INIT_BASE_FLAT).context(IOSnafu {
+            task: "send magic init bytes".to_string(),
+        })?;
     }
     let mut output = d30::IMG_PRECURSOR.to_vec();
     debug!("Extend output");
     if !dry_run {
         output.extend(d30::pack_image(&image));
     }
-    for _ in 0..args.number_of_images {
+    for i in 0..args.number_of_images {
         debug!("Write output to socket");
         if !dry_run {
-            socket
-                .write(output.as_slice())
-                .with_whatever_context(|_| "Failed to write to socket")?;
+            socket.write(output.as_slice()).context(IOSnafu {
+                task: format!("write image #{}", i),
+            })?;
         }
         debug!("Flush socket");
         if !dry_run {
-            socket
-                .flush()
-                .with_whatever_context(|_| "Failed to flush socket")?;
+            socket.flush().context(IOSnafu {
+                task: "flush socket".to_string(),
+            })?;
         }
     }
     Ok(())
@@ -396,26 +439,19 @@ async fn main() -> Result<(), Whatever> {
     debug!("Args: {:#?}", &args);
     let mut config = match Config::load_config() {
         Ok(config) => config,
-        Err(e) => match e {
-            ReadD30CliConfigError::CouldNotParse { source: e } => {
-                whatever!("Could not parse: {}", e);
-            }
+        Err(CLIError::CouldNotReadFile { source }) => {
+            debug!("Could not read file: {}", source);
+            Config::default()
+        }
+        Err(CLIError::CouldNotPlaceConfigFile { source }) => {
+            debug!("Could not place config file: {}", source);
+            Config::default()
+        }
 
-            ReadD30CliConfigError::CouldNotGetXDGPath { source } => {
-                debug!("Could not get XDG path: {}", source);
-                Config::default()
-            }
-
-            ReadD30CliConfigError::CouldNotReadFile { source } => {
-                debug!("Could not read file: {}", source);
-                Config::default()
-            }
-
-            ReadD30CliConfigError::CouldNotPlaceConfigFile { source } => {
-                debug!("Could not place config file: {}", source);
-                Config::default()
-            }
-        },
+        Err(e) => {
+            error!("Encountered surprising error: {}", e);
+            Config::default()
+        }
     };
 
     match &args.command {

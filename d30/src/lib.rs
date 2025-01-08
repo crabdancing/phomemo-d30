@@ -1,4 +1,5 @@
 use std::io;
+use std::string::ParseError;
 use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
 
 use advmac::MacAddr6;
@@ -146,31 +147,64 @@ pub struct D30Config {
 }
 
 #[derive(Debug, Snafu)]
-pub enum LoadTomlError {
+pub enum D30Error {
     #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
     CouldNotReadFile { source: io::Error },
     #[snafu(display("Failed to serialize TOML D30 config"))]
     CouldNotParse { source: toml::de::Error },
-}
-
-#[derive(Debug, Snafu)]
-pub enum ReadD30ConfigError {
     #[snafu(display("Could not get XDG path"))]
     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
     #[snafu(display("Could not place config file"))]
     CouldNotPlaceConfigFile { source: io::Error },
-    #[snafu(display("Could not load TOML"))]
-    CouldNotLoadToml { source: LoadTomlError },
+    // #[snafu(display("Could not load TOML"))]
+    // CouldNotLoadToml { source: LoadTomlError },
+    #[snafu(display("No default device specified"))]
+    NoDefaultDevice,
+
+    #[snafu(display("Could not parse MAC address, or find in hostname table: {device}"))]
+    CouldNotParseOrLookupMacAddress { device: String },
+
+    #[snafu(display("Could not parse specified device as MAC address:\n"))]
+    CouldNotParseMacAddress,
 }
-type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
+
+// #[derive(Debug, Snafu)]
+// pub enum LoadTomlError {
+//     #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
+//     CouldNotReadFile { source: io::Error },
+//     #[snafu(display("Failed to serialize TOML D30 config"))]
+//     CouldNotParse { source: toml::de::Error },
+// }
+
+// #[derive(Debug, Snafu)]
+// pub enum ReadD30ConfigError {
+//     #[snafu(display("Could not get XDG path"))]
+//     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
+//     #[snafu(display("Could not place config file"))]
+//     CouldNotPlaceConfigFile { source: io::Error },
+//     #[snafu(display("Could not load TOML"))]
+//     CouldNotLoadToml { source: LoadTomlError },
+// }
+
+// #[derive(Debug, Snafu)]
+// pub enum ResolveError {
+//     #[snafu(display("No default device specified"))]
+//     NoDefaultDevice,
+
+//     #[snafu(display("Could not parse MAC address, or find in hostname table: {device}"))]
+//     CouldNotParseOrLookupMacAddress { device: String },
+
+//     #[snafu(display("Could not parse specified device as MAC address:\n"))]
+//     CouldNotParseMacAddress,
+// }
 
 impl D30Config {
-    pub fn load_toml(path: &PathBuf) -> Result<Self, LoadTomlError> {
+    pub fn load_toml(path: &PathBuf) -> Result<Self, D30Error> {
         let contents = fs::read_to_string(path).context(CouldNotReadFileSnafu)?;
         Ok(toml::from_str(contents.as_str()).context(CouldNotParseSnafu)?)
     }
 
-    pub fn read_d30_config() -> Result<Self, ReadD30ConfigError> {
+    pub fn read_d30_config() -> Result<Self, D30Error> {
         let phomemo_lib_path = xdg::BaseDirectories::with_prefix("phomemo-library")
             .context(CouldNotGetXDGPathSnafu)?;
         let config_path = phomemo_lib_path
@@ -180,36 +214,27 @@ impl D30Config {
         if let Err(e) = &toml {
             warn!("Failed to parse config file: {:#?}", e);
         }
-        Ok(toml.context(CouldNotLoadTomlSnafu)?)
+        toml
     }
 
-    pub fn resolve_addr(&self, printer_addr: &String) -> Result<MacAddr6, Whatever> {
+    pub fn resolve_addr(&self, printer_addr: &String) -> Result<MacAddr6, D30Error> {
         match printer_addr.parse::<MacAddr6>() {
             Ok(mac_addr) => Ok(mac_addr),
 
             Err(e) => {
                 trace!("Device specification `{}` is not a MAC Address. Assuming it's a hostname, and attempting resolution.", printer_addr);
                 trace!("Inferred because: {}", e);
-                let mac = self
-                    .resolution
-                    .get(printer_addr)
-                    .with_whatever_context(|| {
-                        format!(
-                            "Could not parse MAC address, or find in hostname table: {}",
-                            printer_addr
-                        )
-                    })?;
+                let mac = self.resolution.get(printer_addr).context(
+                    CouldNotParseOrLookupMacAddressSnafu {
+                        device: printer_addr,
+                    },
+                )?;
                 Ok(*mac)
             }
         }
     }
 
-    pub fn resolve_default(&self) -> Result<MacAddr6, Whatever> {
-        self.resolve_addr(
-            &self
-                .default_device
-                .as_ref()
-                .expect("Address not specified, and no default is set in config. Panik.\nPlease check your config and set a default, or set a device via CLI flag."),
-        )
+    pub fn resolve_default(&self) -> Result<MacAddr6, D30Error> {
+        self.resolve_addr(self.default_device.as_ref().context(NoDefaultDeviceSnafu)?)
     }
 }
