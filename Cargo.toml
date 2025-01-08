@@ -2,14 +2,17 @@
 resolver = "2"
 members = ["d30", "cli", "cli-preview"]
 
-package.version = "0.2.2"
+package.version = "0.2.3"
 package.edition = "2021"
 package.license = "AGPL-3.0-or-later"
-package.description = "Provisional userspace driver/app for the [Phomemo D30](https://phomemo.com/products/d30-label-maker)] label maker / printer"
+package.description = "Provisional userspace driver/app for the Phomemo D30 label maker / printer"
 package.keywords = ["driver", "hardware"]
 package.repository = "https://github.com/crabdancing/phomemo-d30"
 
 [workspace.dependencies]
+# IMPORTANT: always bump these when bumping package version
+d30 = "0.2.3"
+
 bluetooth-serial-port-async = "0.6.3"
 derive_more = "0.99.17"
 dimensions = "0.1.0"
@@ -35,7 +38,6 @@ toml = { version = "0.7.6", features = ["indexmap", "preserve_order"] }
 indexmap = { version = "2.0.0", features = ["serde"] }
 show-image = { version = "0.13.1", features = ["image", "save"] }
 snafu = "0.8.0"
-d30 = "0.2.1"
 
 [patch.crates-io]
 d30 = { path = "./d30" }
