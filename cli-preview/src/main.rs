@@ -3,8 +3,11 @@ use std::{
     process::exit,
 };
 
-use show_image::event::{VirtualKeyCode, WindowKeyboardInputEvent};
-use snafu::{ResultExt, Whatever};
+use show_image::{
+    error::{CreateWindowError, InvalidWindowId, SetImageError},
+    event::{VirtualKeyCode, WindowKeyboardInputEvent},
+};
+use snafu::{ResultExt, Snafu};
 
 enum Accepted {
     Yes,
@@ -12,8 +15,22 @@ enum Accepted {
     Unknown,
 }
 
+#[derive(Debug, Snafu)]
+enum CLIPreviewError {
+    #[snafu(display("Failed to create window for preview"))]
+    FailedToCreateWindow { source: CreateWindowError },
+    #[snafu(display("Failed to set image for preview"))]
+    FailedToSetImage { source: SetImageError },
+
+    #[snafu(display("Invalid window ID"))]
+    InvalidWindowID { source: InvalidWindowId },
+
+    #[snafu(display("Failed to read image from STDIN"))]
+    FailedToReadImageFromStdin { source: std::io::Error },
+}
+
 #[show_image::main]
-fn main() -> Result<(), Whatever> {
+fn main() -> Result<(), CLIPreviewError> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn,naga=off"),
     );
@@ -22,20 +39,20 @@ fn main() -> Result<(), Whatever> {
 
     let mut accepted = Accepted::Unknown;
     let mut buffer = Vec::new();
-    reader.read_to_end(&mut buffer);
+    reader
+        .read_to_end(&mut buffer)
+        .context(FailedToReadImageFromStdinSnafu)?;
 
     let preview_image = image::load_from_memory_with_format(&buffer, image::ImageFormat::Png)
         .expect("Failed to load");
 
-    let window = show_image::create_window("image", Default::default())
-        .with_whatever_context(|_| "Could not create window for preview")?;
+    let var_name = "image";
+    let window = show_image::create_window(var_name, Default::default())
+        .context(FailedToCreateWindowSnafu)?;
     window
         .set_image("image-001", preview_image)
-        .with_whatever_context(|_| "Could not set image")?;
-    'event_loop: for event in window
-        .event_channel()
-        .with_whatever_context(|_| "Could not handle window channel")?
-    {
+        .context(FailedToSetImageSnafu)?;
+    'event_loop: for event in window.event_channel().context(InvalidWindowIDSnafu)? {
         match event {
             show_image::event::WindowEvent::CloseRequested(_) => {
                 accepted = Accepted::Unknown;

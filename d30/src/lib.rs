@@ -1,6 +1,5 @@
 use std::io;
-use std::string::ParseError;
-use std::{fmt::Display, fs, path::PathBuf, str::FromStr};
+use std::{fs, path::PathBuf, str::FromStr};
 
 use advmac::MacAddr6;
 use image::{DynamicImage, ImageBuffer, Rgb};
@@ -10,7 +9,8 @@ use rusttype::{Font, Scale};
 use dimensions::*;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use snafu::{Error, OptionExt, ResultExt, Snafu, Whatever};
+use snafu::{OptionExt, ResultExt, Snafu};
+
 // These values are based on those used in polskafan's phomemo_d30 code, available here:
 // https://github.com/polskafan/phomemo_d30
 pub const INIT_BASE_FLAT: &[u8] = &[
@@ -51,11 +51,11 @@ pub fn generate_image(
     text: &str,
     margins: f32,
     font_scale: D30Scale,
-) -> Result<DynamicImage, Whatever> {
+) -> Result<DynamicImage, D30Error> {
     let label_dimensions = Dimensions::new(320, 96);
     trace!("{:#?}", &label_dimensions);
     let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
-    let font = Font::try_from_vec(font).with_whatever_context(|| "Failed to parse font data")?;
+    let font = Font::try_from_vec(font).context(CouldNotInitFontSnafu)?;
     // let scale = Scale::uniform(font_scale);
 
     let scale = match font_scale {
@@ -150,6 +150,10 @@ pub struct D30Config {
 pub enum D30Error {
     #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
     CouldNotReadFile { source: io::Error },
+
+    #[snafu(display("Could not init font"))]
+    CouldNotInitFont,
+
     #[snafu(display("Failed to serialize TOML D30 config"))]
     CouldNotParse { source: toml::de::Error },
     #[snafu(display("Could not get XDG path"))]

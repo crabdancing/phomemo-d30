@@ -15,11 +15,11 @@ use advmac::{MacAddr6, ParseError};
 use bluetooth_serial_port_async::{BtAddr, BtError};
 use clap::{Parser, Subcommand};
 use d30::D30Scale;
-use image::{DynamicImage, ImageFormat};
+use image::{DynamicImage, ImageError, ImageFormat};
 use inquire::InquireError;
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
-use snafu::{whatever, OptionExt, ResultExt, Snafu, Whatever};
+use snafu::{OptionExt, ResultExt, Snafu};
 
 #[derive(Debug, Parser)]
 #[command(name = "d30")]
@@ -103,7 +103,7 @@ impl Config {
     }
 }
 
-fn run(args: Vec<String>) -> Result<std::process::Child, Whatever> {
+fn run(args: Vec<String>) -> Result<std::process::Child, CLIError> {
     debug!("Running child process: {:?}", args);
     match args.as_slice() {
         [cmd, args @ ..] => std::process::Command::new(cmd)
@@ -111,22 +111,25 @@ fn run(args: Vec<String>) -> Result<std::process::Child, Whatever> {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .with_whatever_context(|_| format!("Failed to execute child process: {:?}", cmd)),
-
+            .context(CouldNotCallBinarySnafu { binary_name: cmd }),
+        // .with_whatever_context(|_| format!("Failed to execute child process: {:?}", cmd)),
         [] => {
-            whatever!("No program specified");
+            // whatever!("No program specified");
+            Err(CLIError::BinaryUnspecified)
         }
     }
 }
 
-fn wezterm_imgcat(target: impl AsRef<str>) -> Result<(), Whatever> {
+fn wezterm_imgcat(target: impl AsRef<str>) -> Result<(), CLIError> {
     std::process::Command::new("wezterm")
         .arg("imgcat")
         .arg(target.as_ref())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .with_whatever_context(|_| format!("Failed to call `wezterm` binary"))?;
+        .context(CouldNotCallBinarySnafu {
+            binary_name: "wezterm",
+        })?;
     Ok(())
 }
 
@@ -136,37 +139,42 @@ enum Accepted {
     Unknown,
 }
 
-fn backend_show_image(preview_image: DynamicImage) -> Result<Accepted, Whatever> {
+fn backend_show_image(preview_image: DynamicImage) -> Result<Accepted, CLIError> {
     // let mut accepted = Accepted::Unknown;
 
     let possible_child_targets: Vec<PathBuf> = vec![
         std::env::current_exe()
-            .with_whatever_context(|_| "Could not get current exe!")?
+            .context(IOSnafu {
+                task: "find current exe",
+            })?
             .parent()
-            .with_whatever_context(|| "Could not get parent of current exe")?
+            .context(ParentDirectoryMissingSnafu {
+                task: "find parent of current exe",
+            })?
             .join("d30-cli-preview"),
         "d30-cli-preview".into(),
     ];
     for target in possible_child_targets {
         match Command::new(target).stdin(Stdio::piped()).spawn() {
             Ok(mut child) => {
-                let mut stdin = child
-                    .stdin
-                    .take()
-                    .with_whatever_context(|| "Failed to take child stdin")?;
+                let mut stdin = child.stdin.take().expect("Failed to take child stdin");
                 let mut bytes = Cursor::new(Vec::new());
                 preview_image
                     .write_to(&mut bytes, ImageFormat::Png)
-                    .with_whatever_context(|_| "Failed to write to buffer")?;
+                    .context(ImageSnafu {
+                        task: "write to PNG buffer",
+                    })?;
 
-                stdin
-                    .write_all(&bytes.into_inner())
-                    .with_whatever_context(|_| "Failed to write to child stdin")?;
+                stdin.write_all(&bytes.into_inner()).context(IOSnafu {
+                    task: "write image bytes",
+                })?;
                 drop(stdin);
                 return Ok(
                     match child
                         .wait()
-                        .with_whatever_context(|_| "Could not get child status")?
+                        .context(IOSnafu {
+                            task: "get child status",
+                        })?
                         .code()
                         .unwrap_or(1)
                     {
@@ -187,10 +195,11 @@ fn backend_show_image(preview_image: DynamicImage) -> Result<Accepted, Whatever>
 fn cmd_show_preview(
     preview: Option<PreviewType>,
     preview_image: DynamicImage,
-) -> Result<Accepted, Whatever> {
+) -> Result<Accepted, CLIError> {
     let preview = preview.unwrap_or(PreviewType::Gio);
-    let preview_image_file =
-        temp_file::TempFile::new().with_whatever_context(|_| "Failed to make temporary file")?;
+    let preview_image_file = temp_file::TempFile::new().context(IOSnafu {
+        task: "init path to temporary file",
+    })?;
 
     let path = preview_image_file
         .path()
@@ -202,9 +211,9 @@ fn cmd_show_preview(
     debug!("{:?}", &path);
 
     if preview != PreviewType::ShowImage {
-        preview_image
-            .save(&path)
-            .with_whatever_context(|_| "Failed to write to temporary file")?;
+        preview_image.save(&path).context(ImageSnafu {
+            task: "write image to temporary file",
+        })?;
     }
 
     let mut bytes: Cursor<Vec<u8>> = Cursor::new(Vec::new());
@@ -268,7 +277,7 @@ fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacA
             match config.resolve_default() {
                 Ok(addr) => Ok(addr),
                 Err(e) => {
-                    error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
+                    error!("No address specified on command line or config.\nNo way to know what device we are targeting. This is a critical failure.");
                     Err(e).context(D30LibSnafu)
                 }
             }
@@ -286,9 +295,9 @@ enum CLIError {
     #[snafu(display("D30 library error"))]
     D30LibError { source: d30::D30Error },
     #[snafu(display("Failed to generate image"))]
-    FailedToGenImage { source: Whatever },
+    FailedToGenImage { source: d30::D30Error },
     #[snafu(display("Failed to show preview"))]
-    FailedToShowPreview { source: Whatever },
+    FailedToShowPreview { source: d30::D30Error },
     #[snafu(display("Failed to prompt user in interactive mode"))]
     FailedToPromptUser { source: InquireError },
 
@@ -301,6 +310,9 @@ enum CLIError {
         source: std::io::Error,
     },
 
+    #[snafu(display("IO error while attempting to execute task: {task}"))]
+    ImageError { task: String, source: ImageError },
+
     #[snafu(display("Could not get XDG path"))]
     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
     #[snafu(display("Could not place config file"))]
@@ -312,6 +324,18 @@ enum CLIError {
 
     #[snafu(display("Could not parse MAC address: {address}"))]
     CouldNotParseMacAddr { source: ParseError, address: String },
+
+    #[snafu(display("Failed to call external binary `{binary_name}`. Check program environment"))]
+    CouldNotCallBinary {
+        source: std::io::Error,
+        binary_name: String,
+    },
+
+    #[snafu(display("Binary unspecified"))]
+    BinaryUnspecified,
+
+    #[snafu(display("Parent directory missing while performing task: {task}"))]
+    ParentDirectoryMissing { task: String },
 }
 
 fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> {
@@ -340,9 +364,7 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> 
     let mut preview_image = image.rotate90();
     preview_image.invert();
     if show_preview {
-        let should_accept = match cmd_show_preview(config.preview.clone(), preview_image)
-            .context(FailedToShowPreviewSnafu)?
-        {
+        let should_accept = match cmd_show_preview(config.preview.clone(), preview_image)? {
             Accepted::Yes => true,
             Accepted::No => false,
             Accepted::Unknown => inquire::Confirm::new("Displayed preview. Accept this print?")
@@ -413,7 +435,7 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> 
 
 #[snafu::report]
 #[tokio::main]
-async fn main() -> Result<(), Whatever> {
+async fn main() -> Result<(), CLIError> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn,naga=off"),
     );
@@ -439,8 +461,7 @@ async fn main() -> Result<(), Whatever> {
 
     match &args.command {
         Commands::PrintText(args) => {
-            cmd_print(&mut config, &args)
-                .with_whatever_context(|_| "Could not complete print command")?;
+            cmd_print(&mut config, &args)?;
         }
     }
 
