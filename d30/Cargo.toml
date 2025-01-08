@@ -1,5 +1,6 @@
 [package]
 name = "d30"
+description.workspace = true
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
