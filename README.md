@@ -12,9 +12,15 @@ and now can be blindly transmitted by a number of scripts and utilities availabl
 # Usage
 
 
-## CLI usage
+## CLI usage (imperative, for development / patching, assuming all C dependencies already present)
 
-For CLI usage, simply call:
+```sh
+git clone 'https://github.com/crabdancing/phomemo-d30'
+cd phomemo-d30
+cargo run --bin d30-cli -- [ARGS]
+```
+
+If already installed (e.g., via `cargo install`) for CLI usage, simply call:
 ```
 d30-cli --help
 ```
@@ -24,6 +30,8 @@ d30-cli --help
 ```
 nix run github:crabdancing/phomemo-d30
 ```
+
+This will fetch dependencies, compile, and run the program all in one go.
 
 ## Configuration (imperative)
 
@@ -35,33 +43,12 @@ Under this directory, it expects two config files. One is for the library itself
 
 `~/.config/phomemo-library/phomemo-config.toml`
 
-This is of a format like so:
-
-```toml
-# default device. E.g., if not specifying the target device, it will default to the kitchen.
-# Side note: this can be the device name, or the MAC address.
-default_device = "kitchen"
-[resolution]
-# Mappings device names to their corresponding device MAC addresses
-my_desk = "40:5B:A4:2F:05:46"
-kitchen = "DB:1E:B4:E7:A3:75"
-
-```
-
-You can think of this as a provisional/prototype `/etc/hosts` file but for mapping Bluetooth MAC addresses to human-friendly names. I name these according to where I have the Phomemo D30 machines I have stationed around the house.
 
 The next file is for the CLI component:
 
 `~/.config/phomemo-library/phomemo-cli-config.toml`
 
-This one configures some bits of behavior, like for instance, the preview:
-
-```toml
-# This can be "gio", "wezterm", "show_image", or some custom command
-preview = "gio"
-# This can be true or false
-enable_preview = true
-```
+Check [example-config](https://github.com/crabdancing/phomemo-d30/tree/master/example-config) directory for working example files.
 
 ## Configuration, declarative (via NixOS & system flake)
 

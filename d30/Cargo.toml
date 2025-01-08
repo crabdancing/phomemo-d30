@@ -1,30 +1,29 @@
 [package]
-name = "d30"
-version = "0.1.1"
-edition = "2021"
-description = "Provisional userspace driver/app for the Phomemo D30 printer"
-license = "AGPL-3.0-or-later"
-repository = "https://github.com/alxpettit/dimensions"
-keywords = ["calculator"]
 
+name = "d30"
+keywords = ["driver", "hardware"]
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# bluer = { version = "0.15.7", features = ["full"] }
-dimensions = "0.1.0"
-bluetooth-serial-port-async = "0.6.3"
-derive_more = "0.99.17"
-# hex = "0.4.3"
-image = "0.24.6"
-imageproc = "0.23.0"
-rusttype = { version = "0.9.3", features = ["gpu_cache"] }
-serialport = "4.2.1"
-snafu = "0.7.5"
-tokio = { version = "1.29.1", features = ["full"] }
-toml = { version = "0.7.6", features = ["indexmap", "preserve_order"] }
-serde = { version = "1.0.177", features = ["derive"] }
-xdg = "2.5.2"
-indexmap = { version = "2.0.0", features = ["serde"] }
-advmac = "1.0.3"
-log = "0.4.19"
-env_logger = "0.10.0"
+# bluer.workspace = true
+dimensions.workspace = true
+bluetooth-serial-port-async.workspace = true
+derive_more.workspace = true
+# hex.workspace = true
+image.workspace = true
+imageproc.workspace = true
+rusttype.workspace = true
+serialport.workspace = true
+snafu.workspace = true
+tokio.workspace = true
+toml.workspace = true
+serde.workspace = true
+xdg.workspace = true
+indexmap.workspace = true
+advmac.workspace = true
+log.workspace = true
+env_logger.workspace = true

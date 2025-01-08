@@ -1,0 +1,4 @@
+# This can be "gio", "wezterm", "show_image", or some custom command
+preview = "gio"
+# This can be true or false
+enable_preview = true
