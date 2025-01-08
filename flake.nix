@@ -27,6 +27,9 @@
         lib,
         ...
       }: let
+        guiInputs = (with pkgs.xorg; [libX11 libXcursor libXrandr libXi]) ++ (with pkgs; [vulkan-loader libxkbcommon wayland]);
+        commonBuildInputs = with pkgs; [pkg-config freetype systemd fontconfig bluez];
+
         d30-cli-full = pkgs.callPackage ./pkg.nix {
           inherit naersk;
           fullBuild = true;
@@ -47,13 +50,10 @@
           inherit d30-cli;
           inherit d30-cli-preview;
         };
-        # devShells.default = pkgs.mkShell {
-        #   buildInputs = with pkgs; [
-        #     rust-analyzer
-        #     cargo
-        #     # rust
-        #   ];
-        # };
+        devShells.default = pkgs.callPackage ./pkg.nix {
+          inherit naersk;
+          shell = true;
+        };
       };
     };
 }
