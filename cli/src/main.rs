@@ -335,7 +335,7 @@ enum CLIError {
 }
 
 fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> {
-    info!("Call: cmd_print");
+    trace!("Call: cmd_print");
     let mut args = args.to_owned();
     let dry_run = config.dry_run.unwrap_or(false) || args.dry_run;
     let show_preview = config.enable_preview.unwrap_or(false) || args.preview;
