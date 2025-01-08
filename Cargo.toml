@@ -35,4 +35,7 @@ toml = { version = "0.7.6", features = ["indexmap", "preserve_order"] }
 indexmap = { version = "2.0.0", features = ["serde"] }
 show-image = { version = "0.13.1", features = ["image", "save"] }
 snafu = "0.8.0"
+d30 = "0.2.0"
+
+[patch.crates-io]
 d30 = { path = "./d30" }

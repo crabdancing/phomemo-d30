@@ -752,7 +752,7 @@ checksum = "ef8ae57c4978a2acd8b869ce6b9ca1dfe817bff704c220209fdef2c0b75a01b9"
 
 [[package]]
 name = "d30"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "advmac",
  "bluetooth-serial-port-async",
@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "d30-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "advmac",
  "bluetooth-serial-port-async",
@@ -804,7 +804,7 @@ dependencies = [
 
 [[package]]
 name = "d30-cli-preview"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "env_logger",
  "image",
