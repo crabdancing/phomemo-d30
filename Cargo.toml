@@ -2,7 +2,7 @@
 resolver = "2"
 members = ["d30", "cli", "cli-preview"]
 
-package.version = "0.2.0"
+package.version = "0.2.1"
 package.edition = "2021"
 package.license = "AGPL-3.0-or-later"
 package.description = "Provisional userspace driver/app for the Phomemo D30 printer"
@@ -35,7 +35,7 @@ toml = { version = "0.7.6", features = ["indexmap", "preserve_order"] }
 indexmap = { version = "2.0.0", features = ["serde"] }
 show-image = { version = "0.13.1", features = ["image", "save"] }
 snafu = "0.8.0"
-d30 = "0.2.0"
+d30 = "0.2.1"
 
 [patch.crates-io]
 d30 = { path = "./d30" }
