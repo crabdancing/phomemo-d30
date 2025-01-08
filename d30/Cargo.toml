@@ -1,19 +1,15 @@
 [package]
-
 name = "d30"
-keywords = ["driver", "hardware"]
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
 license.workspace = true
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+keywords.workspace = true
 
 [dependencies]
-# bluer.workspace = true
 dimensions.workspace = true
 bluetooth-serial-port-async.workspace = true
 derive_more.workspace = true
-# hex.workspace = true
 image.workspace = true
 imageproc.workspace = true
 rusttype.workspace = true

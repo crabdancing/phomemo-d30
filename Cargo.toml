@@ -7,7 +7,7 @@ package.edition = "2021"
 package.license = "AGPL-3.0-or-later"
 package.description = "Provisional userspace driver/app for the Phomemo D30 printer"
 package.keywords = ["driver", "hardware"]
-repository = "https://github.com/crabdancing/phomemo-d30"
+package.repository = "https://github.com/crabdancing/phomemo-d30"
 
 [workspace.dependencies]
 bluetooth-serial-port-async = "0.6.3"
