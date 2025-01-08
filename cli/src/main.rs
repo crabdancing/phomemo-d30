@@ -268,38 +268,21 @@ fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacA
             match config.resolve_default() {
                 Ok(addr) => Ok(addr),
                 Err(e) => {
-                    //     // ret
-                    // Err(e)
-
                     error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
-                    // whatever!(
-                    //     "You did not correctly specify an address on command line or config file."
-                    // )
-                    // Err(e)
-                    // todo!()
                     Err(e).context(D30LibSnafu)
                 }
             }
-            // .with_whatever_context(|_| "Could not resolve default MAC address")?;
         }
 
         (None, Err(_)) => {
             error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
-            // whatever!("You did not correctly specify an address on command line or config file.")
             todo!()
         }
     }
-    // if addr_not_specified {
-    //     error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
-    //     whatever!("You did not correctly specify an address on command line or config file.")
-    // }
-    // Ok(addr)
 }
 
 #[derive(Debug, Snafu)]
 enum CLIError {
-    // #[snafu(display("Failed to resolve device MAC address: {source}"))]
-    // CouldNotResolve { source: d30::ResolveError },
     #[snafu(display("D30 library error"))]
     D30LibError { source: d30::D30Error },
     #[snafu(display("Failed to generate image"))]

@@ -156,8 +156,6 @@ pub enum D30Error {
     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
     #[snafu(display("Could not place config file"))]
     CouldNotPlaceConfigFile { source: io::Error },
-    // #[snafu(display("Could not load TOML"))]
-    // CouldNotLoadToml { source: LoadTomlError },
     #[snafu(display("No default device specified"))]
     NoDefaultDevice,
 
@@ -167,36 +165,6 @@ pub enum D30Error {
     #[snafu(display("Could not parse specified device as MAC address:\n"))]
     CouldNotParseMacAddress,
 }
-
-// #[derive(Debug, Snafu)]
-// pub enum LoadTomlError {
-//     #[snafu(display("Failed to read in automatically detected D30 library configuration path"))]
-//     CouldNotReadFile { source: io::Error },
-//     #[snafu(display("Failed to serialize TOML D30 config"))]
-//     CouldNotParse { source: toml::de::Error },
-// }
-
-// #[derive(Debug, Snafu)]
-// pub enum ReadD30ConfigError {
-//     #[snafu(display("Could not get XDG path"))]
-//     CouldNotGetXDGPath { source: xdg::BaseDirectoriesError },
-//     #[snafu(display("Could not place config file"))]
-//     CouldNotPlaceConfigFile { source: io::Error },
-//     #[snafu(display("Could not load TOML"))]
-//     CouldNotLoadToml { source: LoadTomlError },
-// }
-
-// #[derive(Debug, Snafu)]
-// pub enum ResolveError {
-//     #[snafu(display("No default device specified"))]
-//     NoDefaultDevice,
-
-//     #[snafu(display("Could not parse MAC address, or find in hostname table: {device}"))]
-//     CouldNotParseOrLookupMacAddress { device: String },
-
-//     #[snafu(display("Could not parse specified device as MAC address:\n"))]
-//     CouldNotParseMacAddress,
-// }
 
 impl D30Config {
     pub fn load_toml(path: &PathBuf) -> Result<Self, D30Error> {
