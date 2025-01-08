@@ -11,8 +11,19 @@ and now can be blindly transmitted by a number of scripts and utilities availabl
 
 # Usage
 
+## CLI usage (imperative)
+```sh
+cargo install d30-cli
 
-## CLI usage (imperative, for development / patching, assuming all C dependencies already present)
+# if using internal preview mechanism ("show_preview")
+cargo install d30-cli-preview
+
+# Once installed
+d30-cli --help
+```
+
+
+## CLI usage (dev, imperative)
 
 ```sh
 git clone 'https://github.com/crabdancing/phomemo-d30'
@@ -20,10 +31,16 @@ cd phomemo-d30
 cargo run --bin d30-cli -- [ARGS]
 ```
 
-If already installed (e.g., via `cargo install`) for CLI usage, simply call:
+## CLI usage (dev, declarative)
+
+```sh
+git clone 'https://github.com/crabdancing/phomemo-d30'
+cd phomemo-d30
+nix develop
+cargo run --bin d30-cli -- [ARGS]
 ```
-d30-cli --help
-```
+
+
 
 ## CLI usage (declarative, Nix)
 

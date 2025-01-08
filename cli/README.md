@@ -1,0 +1,1 @@
+This is the CLI module of the phomemo-d30 suite. For usage instructions, see the [git repo](https://github.com/crabdancing/phomemo-d30).
