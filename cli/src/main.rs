@@ -23,7 +23,7 @@ use snafu::{OptionExt, ResultExt, Snafu};
 
 #[derive(Debug, Parser)]
 #[command(name = "d30")]
-#[command(about = "A userspace Phomemo D30 controller.")]
+#[command(version, about = "A userspace Phomemo D30 controller.")]
 /// `Arguments` stores the command line arguments passed in from the user or script
 struct Arguments {
     #[command(subcommand)]
