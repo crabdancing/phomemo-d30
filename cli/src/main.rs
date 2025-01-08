@@ -40,7 +40,7 @@ struct ArgsPrintText {
     #[arg(long)]
     dry_run: bool,
     #[arg(short, long)]
-    device: Option<d30::PrinterAddr>,
+    device: Option<String>,
     text: String,
     #[arg(short, long)]
     #[arg(default_value = "auto")]
@@ -246,10 +246,7 @@ fn cmd_show_preview(
     })
 }
 
-fn get_addr(
-    config: &mut Config,
-    user_maybe_addr: Option<d30::PrinterAddr>,
-) -> Result<MacAddr6, Whatever> {
+fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacAddr6, Whatever> {
     let addr: MacAddr6;
     match (user_maybe_addr, d30::D30Config::read_d30_config()) {
         // The case that the user has specified an address, and we have a config loaded
@@ -264,16 +261,16 @@ fn get_addr(
         // We must hope that the user gave us a fully quallified address & not a hostname
         (Some(user_specified_addr), Err(_)) => {
             info!("Address specified by user. NO config. This will fail if address is not fully qualified.");
-            match user_specified_addr {
-                PrinterAddr::MacAddr(user_addr) => {
+            match user_specified_addr.parse::<MacAddr6>() {
+                Ok(user_addr) => {
                     addr = user_addr;
                 }
-                PrinterAddr::PrinterName(name) => {
+                Err(e) => {
                     whatever!(
                         "Cannot resolve \"{}\" because config file could not be retrieved.\n\
                         \tIf \"{}\" is meant to be an address rather than a device name, you should check your formatting,\n\
-                        \tas it does not look like a valid MAC address.",
-                        name, name
+                        \tas it does not look like a valid MAC address.\nCaused by: {}",
+                        user_specified_addr, user_specified_addr, e
                     );
                 }
             }

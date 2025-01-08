@@ -1,6 +1,6 @@
 [package]
 name = "d30"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Provisional userspace driver/app for the Phomemo D30 printer"
 license = "AGPL-3.0-or-later"

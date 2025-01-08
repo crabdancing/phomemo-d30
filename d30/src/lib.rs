@@ -226,7 +226,7 @@ mod printer_addr_serde {
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct D30Config {
-    pub default_device: Option<PrinterAddr>,
+    pub default_device: Option<String>,
     pub resolution: IndexMap<String, MacAddr6>,
 }
 
@@ -268,17 +268,23 @@ impl D30Config {
         Ok(toml.context(CouldNotLoadTomlSnafu)?)
     }
 
-    pub fn resolve_addr(&self, printer_addr: &PrinterAddr) -> Result<MacAddr6, Whatever> {
-        match printer_addr {
-            PrinterAddr::MacAddr(addr) => Ok(addr.clone()),
-            PrinterAddr::PrinterName(name) => {
-                let mac = self.resolution.get(name).with_whatever_context(|| {
-                    format!(
-                        "Could not parse MAC address, or find in hostname table: {}",
-                        name
-                    )
-                })?;
-                Ok(mac.clone())
+    pub fn resolve_addr(&self, printer_addr: &String) -> Result<MacAddr6, Whatever> {
+        match printer_addr.parse::<MacAddr6>() {
+            Ok(mac_addr) => Ok(mac_addr),
+
+            Err(e) => {
+                trace!("Device specification `{}` is not a MAC Address. Assuming it's a hostname, and attempting resolution.", printer_addr);
+                trace!("Inferred because: {}", e);
+                let mac = self
+                    .resolution
+                    .get(printer_addr)
+                    .with_whatever_context(|| {
+                        format!(
+                            "Could not parse MAC address, or find in hostname table: {}",
+                            printer_addr
+                        )
+                    })?;
+                Ok(*mac)
             }
         }
     }
