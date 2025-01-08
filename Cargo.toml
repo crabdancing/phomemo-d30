@@ -2,10 +2,10 @@
 resolver = "2"
 members = ["d30", "cli", "cli-preview"]
 
-package.version = "0.2.1"
+package.version = "0.2.2"
 package.edition = "2021"
 package.license = "AGPL-3.0-or-later"
-package.description = "Provisional userspace driver/app for the Phomemo D30 printer"
+package.description = "Provisional userspace driver/app for the [Phomemo D30](https://phomemo.com/products/d30-label-maker)] label maker / printer"
 package.keywords = ["driver", "hardware"]
 package.repository = "https://github.com/crabdancing/phomemo-d30"
 
