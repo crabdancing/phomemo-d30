@@ -14,7 +14,7 @@ use std::{
 use advmac::MacAddr6;
 use bluetooth_serial_port_async::BtAddr;
 use clap::{Parser, Subcommand};
-use d30::{D30Scale, PrinterAddr};
+use d30::D30Scale;
 use image::{DynamicImage, ImageFormat};
 use log::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
