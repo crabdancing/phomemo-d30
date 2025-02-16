@@ -406,23 +406,32 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> 
             task: "send magic init bytes".to_string(),
         })?;
     }
-    let mut output = d30::IMG_PRECURSOR.to_vec();
     debug!("Extend output");
-    if !dry_run {
-        output.extend(d30::pack_image(&image));
-    }
-    for i in 0..args.number_of_images {
-        debug!("Write output to socket");
-        if !dry_run {
-            socket.write(output.as_slice()).context(IOSnafu {
-                task: format!("write image #{}", i),
-            })?;
-        }
-        debug!("Flush socket");
-        if !dry_run {
-            socket.flush().context(IOSnafu {
-                task: "flush socket".to_string(),
-            })?;
+
+    // Image must be send in chunks of 255 lines
+    let chunks = image.height() / 255;
+    for image_num in 0..args.number_of_images {
+        let mut output = d30::IMG_PRECURSOR.to_vec();
+
+        for chunk_num in 0..=chunks {
+            let chunk = image.clone().crop(0, chunk_num * 255, image.width(), 255);
+            debug!("Extend output");
+            if !dry_run {
+                output.extend(d30::pack_image(&chunk));
+            }
+            debug!("Write output to socket");
+            if !dry_run {
+                socket.write(output.as_slice()).context(IOSnafu {
+                    task: format!("write image #{}", image_num),
+                })?;
+            }
+            debug!("Flush socket");
+            if !dry_run {
+                socket.flush().context(IOSnafu {
+                    task: "flush socket".to_string(),
+                })?;
+            }
+            output.clear();
         }
     }
     Ok(())
