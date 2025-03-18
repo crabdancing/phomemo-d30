@@ -8,11 +8,10 @@ use std::{
     io::{self, Cursor, Write},
     path::PathBuf,
     process::{exit, Command, Stdio},
-    time::Duration,
 };
 
 use advmac::{MacAddr6, ParseError};
-use bluetooth_serial_port_async::{BtAddr, BtError};
+use bluetooth_serial_port_async::{BtAddr, BtError, BtSocket};
 use clap::{Parser, Subcommand};
 use d30::D30Scale;
 use image::{DynamicImage, ImageError, ImageFormat};
@@ -272,7 +271,7 @@ fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacA
         }
         // No address on CLI, but there IS a config!
         // Try to resolve from config
-        (None, Ok(config)) => {
+        (Option::None, Ok(config)) => {
             info!("No address on CLI, but we have a config. Will attempt to identify default target from config.");
             match config.resolve_default() {
                 Ok(addr) => Ok(addr),
@@ -283,7 +282,7 @@ fn get_addr(config: &mut Config, user_maybe_addr: Option<String>) -> Result<MacA
             }
         }
 
-        (None, Err(_)) => {
+        (Option::None, Err(_)) => {
             error!("No address specified on command line or config. No way to know what device we are targeting. This is a critical failure.");
             todo!()
         }
@@ -373,38 +372,53 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> 
             return Ok(());
         }
     }
-    let mut socket =
-        bluetooth_serial_port_async::BtSocket::new(bluetooth_serial_port_async::BtProtocol::RFCOMM)
+
+    let mut socket: Option<BtSocket> = None;
+    println!("Connecting...");
+    'retry: for retries in 0.. {
+        info!("Retry #{}", retries);
+        if retries > args.max_retries {
+            error!("Failed to connect after {} retries!", args.max_retries);
+            exit(1);
+        }
+        if dry_run {
+            break 'retry;
+        }
+
+        let mut new_socket = match BtSocket::new(bluetooth_serial_port_async::BtProtocol::RFCOMM)
             .context(BluetoothBackendSnafu {
                 task: "opening socket".to_string(),
-            })?;
-
-    let mut connected = false;
-    println!("Connecting...");
-    if !dry_run {
-        for _ in 0..args.max_retries {
-            info!("Connection address: {}", addr);
-            match socket.connect(BtAddr(addr.to_array())) {
-                Ok(_) => {
-                    connected = true;
-                    break;
-                }
-                Err(e) => {
-                    warn!("Failed to connect: {}", e);
-                    std::thread::sleep(Duration::from_secs_f32(args.retry_wait));
-                }
+            }) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(
+                    "Error while trying to open socket, on attempt #{}:\n{}",
+                    retries, e
+                );
+                continue 'retry;
             }
+        };
+
+        if let Err(e) = new_socket.connect(BtAddr(addr.to_array())) {
+            error!(
+                "Error while trying to connect, on attempt #{}:\n{}",
+                retries, e
+            );
+            continue 'retry;
         }
+
+        socket = Some(new_socket);
+        break 'retry;
     }
-    if !connected {
-        error!("Failed to connect after {} retries!", args.max_retries);
-        exit(1);
-    }
+
     debug!("Init connection");
-    if !dry_run {
-        socket.write(d30::INIT_BASE_FLAT).context(IOSnafu {
-            task: "send magic init bytes".to_string(),
-        })?;
+    if let Some(socket) = &mut socket {
+        socket
+            .write(d30::INIT_BASE_FLAT)
+            .map(|x| x)
+            .context(IOSnafu {
+                task: "send magic init bytes".to_string(),
+            })?;
     }
     debug!("Extend output");
 
@@ -416,17 +430,15 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> 
         for chunk_num in 0..=chunks {
             let chunk = image.clone().crop(0, chunk_num * 255, image.width(), 255);
             debug!("Extend output");
-            if !dry_run {
-                output.extend(d30::pack_image(&chunk));
-            }
+            output.extend(d30::pack_image(&chunk));
             debug!("Write output to socket");
-            if !dry_run {
+            if let Some(socket) = &mut socket {
                 socket.write(output.as_slice()).context(IOSnafu {
                     task: format!("write image #{}", image_num),
                 })?;
             }
             debug!("Flush socket");
-            if !dry_run {
+            if let Some(socket) = &mut socket {
                 socket.flush().context(IOSnafu {
                     task: "flush socket".to_string(),
                 })?;
