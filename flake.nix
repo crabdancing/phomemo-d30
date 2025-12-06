@@ -1,12 +1,12 @@
 {
   inputs = {
-    naersk.url = "github:nix-community/naersk";
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    crane.url = "github:ipetkov/crane";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     # devshell.url = "github:numtide/devshell";
     flake-parts.url = "github:hercules-ci/flake-parts";
   };
 
-  outputs = {naersk, ...} @ inputs:
+  outputs = {crane, ...} @ inputs:
     inputs.flake-parts.lib.mkFlake {inherit inputs;} {
       flake = let
         module = import ./module.nix {inherit inputs;};
@@ -25,23 +25,27 @@
         system,
         pkgs,
         lib,
+        # inputs,  <-- Removed to fix the "not a perSystem module argument" error
         ...
       }: let
+        # Access inputs from the lexical scope (outputs arguments)
+        craneLib = inputs.crane.mkLib pkgs;
+
         guiInputs = (with pkgs.xorg; [libX11 libXcursor libXrandr libXi]) ++ (with pkgs; [vulkan-loader libxkbcommon wayland]);
         commonBuildInputs = with pkgs; [pkg-config freetype systemd fontconfig bluez];
 
         d30-cli-full = pkgs.callPackage ./pkg.nix {
-          inherit naersk;
+          inherit craneLib;
           fullBuild = true;
           guiPreview = true;
         };
         d30-cli-preview = pkgs.callPackage ./pkg.nix {
-          inherit naersk;
+          inherit craneLib;
           fullBuild = false;
           guiPreview = true;
         };
         d30-cli = pkgs.callPackage ./pkg.nix {
-          inherit naersk;
+          inherit craneLib;
         };
       in {
         packages = {
@@ -51,7 +55,7 @@
           inherit d30-cli-preview;
         };
         devShells.default = pkgs.callPackage ./pkg.nix {
-          inherit naersk;
+          inherit craneLib;
           shell = true;
         };
       };

@@ -6,13 +6,16 @@
 }: let
   cfg = config.programs.phomemo-d30;
   tomlFormat = pkgs.formats.toml {};
+
+  craneLib = inputs.crane.mkLib pkgs;
+
   d30-cli-full = pkgs.callPackage ./pkg.nix {
-    inherit (inputs) naersk;
+    inherit craneLib;
     fullBuild = true;
     guiPreview = true;
   };
   d30-cli-minimal = pkgs.callPackage ./pkg.nix {
-    inherit (inputs) naersk;
+    inherit craneLib;
   };
 in {
   options.programs.phomemo-d30 = {
@@ -74,8 +77,5 @@ in {
       // (lib.optionalAttrs (cfg.default_device != null) {
         default_device = cfg.default_device;
       });
-    # // (lib.optionalAttrs (cfg.default != null) {
-    #        default = cfg.default;
-    #      });
   };
 }
