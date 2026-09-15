@@ -10,7 +10,7 @@ use std::{
     process::{exit, Command, Stdio},
 };
 
-use advmac::{MacAddr6, ParseError};
+use advmac::{MacAddr6, MacAddrFormat, ParseError};
 use bluetooth_serial_port_async::{BtAddr, BtError, BtSocket};
 use clap::{Parser, Subcommand};
 use d30::D30Scale;
@@ -378,7 +378,16 @@ fn cmd_print(config: &mut Config, args: &ArgsPrintText) -> Result<(), CLIError> 
     'retry: for retries in 0.. {
         info!("Retry #{}", retries);
         if retries > args.max_retries {
-            error!("Failed to connect after {} retries!", args.max_retries);
+            error!(
+                "Failed to connect after {} retries!\n\
+                 The printer never answered. Usual causes:\n\
+                 - it is switched off, asleep, or out of range\n\
+                 - it is not bonded, in which case it ignores us entirely\n\
+                 Run `bluetoothctl info {}` and look for UUID 00001101 (Serial Port).\n\
+                 If that entry is missing, pair the device again.",
+                args.max_retries,
+                addr.format_string(MacAddrFormat::ColonNotation),
+            );
             exit(1);
         }
         if dry_run {
